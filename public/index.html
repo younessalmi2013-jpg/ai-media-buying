@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Media Buying</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#07090f;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+    a{color:#6366f1;text-decoration:none}
+
+    /* HEADER */
+    .hdr{background:#0d1122;border-bottom:1px solid #1a2238;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+    .hdr-l{display:flex;align-items:center;gap:12px}
+    .logo{width:38px;height:38px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+    .hdr-title{font-size:17px;font-weight:700;color:#fff}
+    .hdr-sub{font-size:11px;color:#4b5563}
+    .hdr-r{display:flex;align-items:center;gap:10px}
+    .dot{width:8px;height:8px;border-radius:50%;background:#10b981;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .ts{font-size:11px;color:#4b5563}
+    .rbtn{background:#111827;border:1px solid #1f2d47;color:#94a3b8;padding:5px 13px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s}
+    .rbtn:hover{background:#1f2d47;color:#e2e8f0}
+
+    /* LAYOUT */
+    .wrap{max-width:1400px;margin:0 auto;padding:20px 24px}
+
+    /* SCORE BADGE */
+    .score-ring{display:flex;align-items:center;gap:8px;background:#0d1122;border:1px solid #1a2238;border-radius:12px;padding:8px 16px}
+    .score-num{font-size:22px;font-weight:800}
+    .score-lbl{font-size:11px;color:#64748b;line-height:1.2}
+    .score-good{color:#10b981}.score-ok{color:#f59e0b}.score-bad{color:#ef4444}
+
+    /* TABS */
+    .tabs{display:flex;gap:3px;background:#0a0d18;border:1px solid #1a2238;border-radius:12px;padding:4px;margin-bottom:22px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .tab{flex:1;min-width:fit-content;padding:9px 14px;border-radius:8px;border:none;background:transparent;color:#4b5563;font-size:13px;font-weight:500;cursor:pointer;transition:.2s;white-space:nowrap}
+    .tab.active{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff}
+    .tab:hover:not(.active){background:#111827;color:#94a3b8}
+    .tc{display:none}.tc.active{display:block}
+
+    /* KPI CARDS */
+    .kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+    .kcard{background:#0d1122;border:1px solid #1a2238;border-radius:14px;padding:18px;position:relative;overflow:hidden}
+    .kcard::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0}
+    .kc-b::before{background:linear-gradient(90deg,#6366f1,#8b5cf6)}
+    .kc-g::before{background:linear-gradient(90deg,#10b981,#059669)}
+    .kc-o::before{background:linear-gradient(90deg,#f59e0b,#d97706)}
+    .kc-r::before{background:linear-gradient(90deg,#ef4444,#dc2626)}
+    .kc-p::before{background:linear-gradient(90deg,#8b5cf6,#ec4899)}
+    .klbl{font-size:11px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+    .kval{font-size:26px;font-weight:700;color:#fff;margin-bottom:3px}
+    .ksub{font-size:11px;color:#4b5563}
+    .kbadge{display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:20px;margin-top:6px;font-weight:600}
+    .bg-good{background:rgba(16,185,129,.15);color:#10b981}
+    .bg-warn{background:rgba(245,158,11,.15);color:#f59e0b}
+    .bg-bad{background:rgba(239,68,68,.15);color:#ef4444}
+    .bg-info{background:rgba(99,102,241,.15);color:#818cf8}
+
+    /* GOAL BAR */
+    .gcard{background:#0d1122;border:1px solid #1a2238;border-radius:14px;padding:22px;margin-bottom:20px}
+    .ghead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:12px}
+    .gtitle{font-size:16px;font-weight:600;color:#fff}
+    .gsub{font-size:12px;color:#4b5563;margin-top:2px}
+    .gnum{font-size:26px;font-weight:800;color:#6366f1}
+    .gpct{font-size:12px;color:#4b5563}
+    .pbar{background:#131c2e;border-radius:8px;height:10px;overflow:hidden;margin-bottom:14px}
+    .pfill{height:100%;border-radius:8px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899);transition:width .8s ease;position:relative;overflow:hidden}
+    .pfill::after{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);animation:shim 2s infinite}
+    @keyframes shim{100%{left:100%}}
+    .gmeta{display:flex;gap:20px;flex-wrap:wrap}
+    .gmi{display:flex;flex-direction:column}
+    .gmilbl{font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px}
+    .gmival{font-size:15px;font-weight:600;color:#e2e8f0}
+    .countdown{background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(139,92,246,.1));border:1px solid rgba(99,102,241,.3);border-radius:12px;padding:12px 18px;text-align:center;min-width:130px}
+    .cdlbl{font-size:10px;color:#6366f1;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+    .cdval{font-size:22px;font-weight:700;color:#a78bfa}
+    .cdsub{font-size:10px;color:#4b5563;margin-top:2px}
+
+    /* BUDGET CTRL */
+    .bcard{background:#0d1122;border:1px solid #1a2238;border-radius:14px;padding:18px;margin-bottom:20px}
+    .bcur{font-size:30px;font-weight:700;color:#fff}
+    .bbtns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .bbtn{padding:10px 18px;border-radius:10px;border:1px solid #1f2d47;background:#111827;color:#64748b;font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
+    .bbtn:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(99,102,241,.3)}
+    .bbtn.b1{border-color:#0ea5e9;color:#0ea5e9}.bbtn.b2{border-color:#10b981;color:#10b981}
+    .bbtn.b3{border-color:#f59e0b;color:#f59e0b}.bbtn.b4{border-color:#ef4444;color:#ef4444}
+
+    /* TABLES */
+    .tcard{background:#0d1122;border:1px solid #1a2238;border-radius:14px;overflow:hidden;margin-bottom:20px}
+    .thead-row{padding:16px 20px;border-bottom:1px solid #1a2238;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+    .ttitle{font-size:14px;font-weight:600;color:#fff}
+    table{width:100%;border-collapse:collapse}
+    th{padding:10px 14px;text-align:left;font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px;background:#080b14}
+    td{padding:13px 14px;border-top:1px solid #111827;font-size:12px}
+    tr:hover td{background:#0a0e1a}
+    .cg{color:#10b981;font-weight:600}.co{color:#f59e0b;font-weight:600}.cr{color:#ef4444;font-weight:600}
+    .tname{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    /* RECS */
+    .recs{display:flex;flex-direction:column;gap:11px;margin-bottom:20px}
+    .rec{background:#0d1122;border-radius:12px;padding:16px 18px;border-left:4px solid;display:flex;gap:14px;align-items:flex-start}
+    .reu{border-left-color:#ef4444;background:rgba(239,68,68,.04)}
+    .reh{border-left-color:#f59e0b;background:rgba(245,158,11,.04)}
+    .rem{border-left-color:#6366f1;background:rgba(99,102,241,.04)}
+    .rei{border-left-color:#0ea5e9;background:rgba(14,165,233,.04)}
+    .remoji{font-size:22px;flex-shrink:0;margin-top:2px}
+    .rebody{flex:1}
+    .repri{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+    .reu .repri{color:#ef4444}.reh .repri{color:#f59e0b}.rem .repri{color:#6366f1}.rei .repri{color:#0ea5e9}
+    .retitle{font-size:14px;font-weight:600;color:#fff;margin-bottom:3px}
+    .react{font-size:12px;color:#94a3b8;margin-bottom:3px}
+    .react strong{color:#e2e8f0}
+    .rereason{font-size:11px;color:#4b5563}
+
+    /* SCALING PLAN */
+    .plan-header{display:grid;grid-template-columns:60px 90px 80px 80px 80px 90px 110px;gap:8px;padding:10px 14px;background:#080b14;font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px}
+    .plan-row{display:grid;grid-template-columns:60px 90px 80px 80px 80px 90px 110px;gap:8px;padding:12px 14px;border-top:1px solid #111827;font-size:12px;align-items:center;transition:.15s}
+    .plan-row:hover{background:#0a0e1a}
+    .action-badge{display:inline-flex;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;background:rgba(255,255,255,.07)}
+    .hit-goal{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2)}
+
+    /* CHARTS */
+    .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+    .ccrd{background:#0d1122;border:1px solid #1a2238;border-radius:14px;padding:18px}
+    .ctitle{font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:14px}
+    @media(max-width:700px){.cgrid{grid-template-columns:1fr}}
+
+    /* SETTINGS FORM */
+    .sform{background:#0d1122;border:1px solid #1a2238;border-radius:14px;padding:24px;margin-bottom:20px}
+    .sform h3{font-size:15px;font-weight:600;color:#fff;margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid #1a2238}
+    .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+    .fgroup{display:flex;flex-direction:column;gap:6px}
+    .flbl{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px}
+    .finp{background:#111827;border:1px solid #1f2d47;color:#e2e8f0;padding:10px 14px;border-radius:10px;font-size:13px;width:100%;transition:.2s;outline:none}
+    .finp:focus{border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.2)}
+    .finp::placeholder{color:#374151}
+    select.finp option{background:#111827}
+    .fsave{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;padding:12px 28px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-top:18px;transition:.2s}
+    .fsave:hover{opacity:.9;transform:translateY(-1px)}
+    .fsaved{background:#10b981!important}
+
+    /* SCALING RULES */
+    .rules-grid{display:flex;flex-direction:column;gap:8px}
+    .rule-row{display:grid;grid-template-columns:120px 1fr 140px;gap:12px;align-items:center;background:#080b14;border-radius:10px;padding:12px 16px}
+    .rule-cpl{font-size:13px;font-weight:600}
+    .rule-action{font-size:12px;color:#94a3b8}
+    .rule-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;text-align:center}
+
+    /* IG */
+    .ig-con{background:#0d1122;border:1px dashed #1f2d47;border-radius:14px;padding:40px;text-align:center;margin-bottom:20px}
+    .ig-con h3{font-size:17px;color:#fff;margin-bottom:8px}
+    .ig-con p{font-size:12px;color:#4b5563;max-width:480px;margin:0 auto 16px}
+    .ig-steps{background:#080b14;border-radius:10px;padding:14px;text-align:left;max-width:460px;margin:0 auto}
+    .ig-step{font-size:12px;color:#94a3b8;padding:6px 0;border-bottom:1px solid #111827}
+    .ig-step:last-child{border:0}
+    .ig-step code{background:#1f2d47;color:#818cf8;padding:2px 6px;border-radius:4px;font-size:10px}
+    .ig-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+    .ig-stat{background:linear-gradient(135deg,rgba(236,72,153,.1),rgba(99,102,241,.1));border:1px solid rgba(236,72,153,.2);border-radius:12px;padding:18px;text-align:center}
+    .ig-sv{font-size:26px;font-weight:700;color:#ec4899}
+    .ig-sl{font-size:11px;color:#4b5563;margin-top:3px}
+
+    /* SCRIPTS */
+    .sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:20px}
+    .scard{background:#0d1122;border:1px solid #1a2238;border-radius:14px;overflow:hidden}
+    .stop{padding:14px 16px;border-bottom:1px solid #1a2238;display:flex;justify-content:space-between;align-items:flex-start}
+    .stype{font-size:9px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px}
+    .stitle{font-size:14px;font-weight:600;color:#fff;margin:3px 0}
+    .starget{font-size:11px;color:#6366f1}
+    .sbadge{font-size:10px;padding:3px 9px;border-radius:20px;background:rgba(99,102,241,.15);color:#818cf8;white-space:nowrap}
+    .shook{padding:10px 16px;background:rgba(99,102,241,.05);border-bottom:1px solid #1a2238;font-size:12px;color:#a78bfa;font-style:italic}
+    .sbody{padding:12px 16px;font-size:12px;color:#94a3b8;line-height:1.65;white-space:pre-wrap;max-height:170px;overflow-y:auto}
+    .sact{padding:10px 16px;border-top:1px solid #1a2238;display:flex;gap:8px}
+    .cbtn{flex:1;padding:7px;border-radius:8px;border:1px solid #1f2d47;background:#111827;color:#94a3b8;font-size:11px;cursor:pointer;transition:.2s}
+    .cbtn:hover{background:#6366f1;color:#fff;border-color:#6366f1}
+    .cbtn.copied{background:#10b981;color:#fff;border-color:#10b981}
+
+    /* AI ANALYSIS SPECIAL */
+    .ai-score-card{background:linear-gradient(135deg,#0d1a3a,#0d1122);border:1px solid #1e3a6e;border-radius:16px;padding:24px;margin-bottom:20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+    .ai-score-circle{width:90px;height:90px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;font-size:28px;font-weight:800;border:3px solid}
+    .ai-decision-box{background:#080b14;border-radius:12px;padding:16px 20px;margin-bottom:20px;border:1px solid}
+    .ai-decision-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:700}
+    .ai-decision-main{font-size:20px;font-weight:700;color:#fff;margin-bottom:4px}
+    .ai-decision-detail{font-size:13px;color:#94a3b8}
+    .ai-budget-calc{background:#080b14;border-radius:12px;padding:18px 20px;margin-bottom:20px}
+    .ai-bc-title{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
+    .ai-bc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+    .ai-bc-item{background:#0d1122;border-radius:10px;padding:14px}
+    .ai-bc-lbl{font-size:10px;color:#4b5563;margin-bottom:4px}
+    .ai-bc-val{font-size:18px;font-weight:700;color:#fff}
+    .ai-bc-sub{font-size:10px;color:#4b5563;margin-top:2px}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:22px;right:22px;background:#10b981;color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:500;z-index:9999;transform:translateY(100px);opacity:0;transition:.3s}
+    .toast.show{transform:translateY(0);opacity:1}
+    .toast.err{background:#ef4444}
+
+    /* LOADING */
+    .loading{display:flex;justify-content:center;align-items:center;min-height:250px}
+    .spin{width:36px;height:36px;border:3px solid #1a2238;border-top-color:#6366f1;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{100%{transform:rotate(360deg)}}
+    .section-title{font-size:11px;color:#4b5563;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;margin-top:4px}
+
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-track{background:#080b14}
+    ::-webkit-scrollbar-thumb{background:#1f2d47;border-radius:3px}
+  </style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">🤖</div>
+    <div>
+      <div class="hdr-title">AI Media Buying</div>
+      <div class="hdr-sub" id="campaignName">Slimane Wake Up Academy</div>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <div id="scoreHdr" class="score-ring" style="display:none">
+      <div id="scoreNum" class="score-num score-ok">—</div>
+      <div class="score-lbl">Score<br>IA</div>
+    </div>
+    <div class="dot" id="dot"></div>
+    <div class="ts" id="ts">Chargement...</div>
+    <button class="rbtn" onclick="load()">🔄</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab active" onclick="sw('dashboard')">📊 Dashboard</button>
+    <button class="tab" onclick="sw('ai')">🤖 Analyse IA</button>
+    <button class="tab" onclick="sw('scaling')">📈 Plan Scaling</button>
+    <button class="tab" onclick="sw('adsets')">📦 Ad Sets</button>
+    <button class="tab" onclick="sw('ads')">🎯 Pubs</button>
+    <button class="tab" onclick="sw('scripts')">✍️ Scripts</button>
+    <button class="tab" onclick="sw('instagram')">📸 Instagram</button>
+    <button class="tab" onclick="sw('settings')">⚙️ Objectifs</button>
+  </div>
+
+  <div class="tc active" id="tc-dashboard"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-ai"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-scaling"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-adsets"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-ads"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-scripts"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-instagram"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-settings"><div class="loading"><div class="spin"></div></div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let D = null, CFG = null;
+let charts = {};
+
+const f2 = n => n == null ? '—' : Number(n).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fn = n => n == null ? '—' : Number(n).toLocaleString('fr-FR');
+const cplCls = c => !c ? '' : c < 6 ? 'cg' : c < 9 ? 'co' : 'cr';
+const cplBg = c => !c ? '' : c < 6 ? 'bg-good' : c < 9 ? 'bg-warn' : 'bg-bad';
+
+function toast(msg, err=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(err?' err':'')+' show';
+  setTimeout(()=>t.className='toast',3000);
+}
+function ago(iso){ const s=Math.floor((Date.now()-new Date(iso))/1000); return s<60?`${s}s`:s<3600?`${Math.floor(s/60)}min`:`${Math.floor(s/3600)}h`; }
+
+function sw(tab){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const ts=['dashboard','ai','scaling','adsets','ads','scripts','instagram','settings'];
+    t.classList.toggle('active',ts[i]===tab);
+  });
+  document.querySelectorAll('.tc').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tc-'+tab).classList.add('active');
+  if(tab==='settings') renderSettings();
+  else if(D) renderTab(tab);
+}
+
+async function load(){
+  try{
+    document.getElementById('dot').style.background='#f59e0b';
+    document.getElementById('ts').textContent='Actualisation...';
+    const [dr,cr]=await Promise.all([fetch('/api/dashboard'),fetch('/api/config')]);
+    D=await dr.json(); CFG=await cr.json();
+    document.getElementById('dot').style.background='#10b981';
+    document.getElementById('ts').textContent=`MAJ ${ago(D.lastUpdated)}`;
+    document.getElementById('campaignName').textContent=D.campaign?.name||'Campaign';
+    // Score
+    if(D.ai?.score!=null){
+      const sn=document.getElementById('scoreNum');
+      sn.textContent=D.ai.score;
+      sn.className='score-num '+(D.ai.score>=70?'score-good':D.ai.score>=50?'score-ok':'score-bad');
+      document.getElementById('scoreHdr').style.display='flex';
+    }
+    renderAll();
+  }catch(e){
+    document.getElementById('dot').style.background='#ef4444';
+    document.getElementById('ts').textContent='Erreur';
+    toast('Erreur: '+e.message,true);
+  }
+}
+
+function renderAll(){
+  ['dashboard','ai','scaling','adsets','ads','scripts'].forEach(renderTab);
+  loadIG();
+}
+function renderTab(t){ if(!D) return; const fns={dashboard:renderDashboard,ai:renderAI,scaling:renderScaling,adsets:renderAdSets,ads:renderAds,scripts:renderScripts}; if(fns[t]) fns[t](D); }
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+function renderDashboard(D){
+  const k=D.ai.kpis, g=D.ai.config, w=D.week, c=D.campaign;
+  const pct=Math.min(100,parseFloat((k.weekLeads/g.totalLeadGoal*100).toFixed(1)));
+  document.getElementById('tc-dashboard').innerHTML=`
+    <!-- Goal -->
+    <div class="gcard">
+      <div class="ghead">
+        <div>
+          <div class="gtitle">🎯 Objectif — ${fn(g.totalLeadGoal)} leads</div>
+          <div class="gsub">${g.masterclassName} · ${new Date(g.masterclassDate).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})} à ${new Date(g.masterclassDate).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="gnum">${fn(k.weekLeads)} / ${fn(g.totalLeadGoal)}</div>
+          <div class="gpct">${pct}% atteint</div>
+        </div>
+      </div>
+      <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px">
+        <div class="gmeta">
+          <div class="gmi"><span class="gmilbl">Restants</span><span class="gmival">${fn(k.leadsRemaining)} leads</span></div>
+          <div class="gmi"><span class="gmilbl">Jours restants</span><span class="gmival">${k.daysLeft}j</span></div>
+          <div class="gmi"><span class="gmilbl">Leads/jour nécessaires</span><span class="gmival">${fn(k.leadsPerDayNeeded)}</span></div>
+          <div class="gmi"><span class="gmilbl">Budget/jour idéal</span><span class="gmival">€${fn(k.budgetPerDayIdeal)}</span></div>
+          <div class="gmi"><span class="gmilbl">Projection</span><span class="gmival ${k.willHitGoal?'cg':'cr'}">${fn(k.projectedLeads)} leads</span></div>
+        </div>
+        <div class="countdown">
+          <div class="cdlbl">⏰ Dans</div>
+          <div class="cdval">${k.hoursLeft}h</div>
+          <div class="cdsub">avant la masterclass</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPIs Today -->
+    <div class="section-title">📅 Aujourd'hui</div>
+    <div class="kgrid">
+      <div class="kcard kc-b"><div class="klbl">💸 Dépensé</div><div class="kval">€${f2(k.todaySpend)}</div><div class="ksub">Budget: €${fn(c.dailyBudget)}/j</div><div class="kbadge bg-warn">${k.budgetConsumedPct}% consommé</div></div>
+      <div class="kcard kc-g"><div class="klbl">📋 Leads</div><div class="kval">${fn(k.todayLeads)}</div><div class="ksub">Semaine: ${fn(k.weekLeads)}</div></div>
+      <div class="kcard ${k.todayCPL<g.targetCPL?'kc-g':k.todayCPL<g.maxAcceptableCPL?'kc-o':'kc-r'}"><div class="klbl">💰 CPL</div><div class="kval ${cplCls(k.todayCPL)}">€${f2(k.todayCPL)}</div><div class="ksub">Objectif: €${g.targetCPL}</div><div class="kbadge ${cplBg(k.todayCPL)}">${k.todayCPL?k.todayCPL<g.targetCPL?'✅ Objectif atteint':k.todayCPL<g.maxAcceptableCPL?'⚠️ Au-dessus cible':'🔴 Critique':'N/A'}</div></div>
+      <div class="kcard kc-p"><div class="klbl">👁️ Impressions</div><div class="kval">${fn(k.todayData?.impressions||0)}</div><div class="ksub">Reach: ${fn(k.reach)}</div></div>
+      <div class="kcard kc-b"><div class="klbl">🖱️ CTR</div><div class="kval">${f2(D.today?.ctr)}%</div><div class="ksub">CPC: €${f2(k.cpc)}</div></div>
+      ${k.convRate?`<div class="kcard kc-g"><div class="klbl">🔄 Taux conversion LP</div><div class="kval">${k.convRate}%</div><div class="ksub">LPV/Clics: ${k.lpvRate||'—'}%</div></div>`:''}
+    </div>
+
+    <!-- KPIs Week -->
+    <div class="section-title">📆 Cette semaine</div>
+    <div class="kgrid">
+      <div class="kcard kc-b"><div class="klbl">💸 Total dépensé</div><div class="kval">€${f2(w.spend)}</div></div>
+      <div class="kcard kc-g"><div class="klbl">📋 Leads totaux</div><div class="kval">${fn(w.leads)}</div></div>
+      <div class="kcard ${w.cpl<8?'kc-g':'kc-o'}"><div class="klbl">💰 CPL moyen</div><div class="kval ${cplCls(w.cpl)}">€${f2(w.cpl)}</div></div>
+      <div class="kcard kc-p"><div class="klbl">👁️ Reach total</div><div class="kval">${fn(w.reach)}</div></div>
+      <div class="kcard kc-b"><div class="klbl">📊 Impressions</div><div class="kval">${fn(w.impressions)}</div></div>
+    </div>
+
+    <!-- Budget Control -->
+    <div class="bcard">
+      <div style="font-size:11px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">⚡ Contrôle Budget Rapide</div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div><div style="font-size:11px;color:#4b5563">Budget actuel</div><div class="bcur">€${fn(c.dailyBudget)}<span style="font-size:14px;color:#4b5563">/jour</span></div></div>
+        <div class="bbtns">
+          <button class="bbtn b1" onclick="updBudget(350)">€350 🐢</button>
+          <button class="bbtn b2" onclick="updBudget(500)">€500 🚶</button>
+          <button class="bbtn b3" onclick="updBudget(750)">€750 🏃</button>
+          <button class="bbtn b4" onclick="updBudget(1000)">€1 000 🚀</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="cgrid">
+      <div class="ccrd"><div class="ctitle">📊 CPL par Ad Set (aujourd'hui)</div><canvas id="cplChart" height="200"></canvas></div>
+      <div class="ccrd"><div class="ctitle">📋 Leads par Ad Set (semaine)</div><canvas id="leadsChart" height="200"></canvas></div>
+    </div>`;
+
+  setTimeout(()=>renderCharts(D), 50);
+}
+
+function renderCharts(D){
+  const sets=D.adSets.today.filter(a=>a.spend>0);
+  const labels=sets.map(a=>a.name.substring(0,18)+'…');
+  const cpls=sets.map(a=>a.cpl?+a.cpl.toFixed(2):0);
+  const wsets=D.adSets.week.filter(a=>a.leads>0);
+  const wlabels=wsets.map(a=>a.name.substring(0,18)+'…');
+  const wleads=wsets.map(a=>a.leads);
+  const cols=['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#0ea5e9'];
+  const opts={responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#4b5563',font:{size:9}},grid:{color:'#111827'}},y:{ticks:{color:'#4b5563'},grid:{color:'#111827'}}}};
+  if(charts.cpl) charts.cpl.destroy();
+  if(charts.leads) charts.leads.destroy();
+  const c1=document.getElementById('cplChart');
+  if(c1) charts.cpl=new Chart(c1,{type:'bar',data:{labels,datasets:[{data:cpls,backgroundColor:cols.map(c=>c+'99'),borderColor:cols,borderWidth:2,borderRadius:6}]},options:opts});
+  const c2=document.getElementById('leadsChart');
+  if(c2) charts.leads=new Chart(c2,{type:'doughnut',data:{labels:wlabels,datasets:[{data:wleads,backgroundColor:cols.map(c=>c+'cc'),borderColor:'#07090f',borderWidth:3}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}}}}});
+}
+
+// ── AI ANALYSIS ────────────────────────────────────────────────────────────────
+function renderAI(D){
+  const ai=D.ai, k=ai.kpis, s=ai.scalingDecision, g=ai.config;
+  const score=ai.score||0;
+  const scoreColor=score>=70?'#10b981':score>=50?'#f59e0b':'#ef4444';
+  const recs=ai.recommendations||[];
+
+  document.getElementById('tc-ai').innerHTML=`
+    <!-- Score Card -->
+    <div class="ai-score-card">
+      <div class="ai-score-circle" style="border-color:${scoreColor};color:${scoreColor}">${score}<span style="font-size:12px">/100</span></div>
+      <div style="flex:1">
+        <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">Score performance IA</div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:12px">${score>=70?'Excellente performance — scale maintenant':score>=50?'Performance correcte — optimisation en cours':'Performance insuffisante — action requise'}</div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+          <div><div style="font-size:10px;color:#4b5563">CPL Aujourd'hui</div><div style="font-size:15px;font-weight:700;color:${cplColor(k.todayCPL,g)}">€${f2(k.todayCPL)}</div></div>
+          <div><div style="font-size:10px;color:#4b5563">CPL Objectif</div><div style="font-size:15px;font-weight:700;color:#6366f1">€${g.targetCPL}</div></div>
+          <div><div style="font-size:10px;color:#4b5563">Écart</div><div style="font-size:15px;font-weight:700;color:${k.todayCPL<=g.targetCPL?'#10b981':'#ef4444'}">${k.todayCPL?((k.todayCPL-g.targetCPL)/g.targetCPL*100).toFixed(0)+'%':'—'}</div></div>
+          <div><div style="font-size:10px;color:#4b5563">Projection</div><div style="font-size:15px;font-weight:700;color:${k.willHitGoal?'#10b981':'#ef4444'}">${fn(k.projectedLeads)} leads</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scaling Decision -->
+    ${s?`<div class="ai-decision-box" style="border-color:${s.color}20">
+      <div class="ai-decision-title" style="color:${s.color}">🤖 DÉCISION IA — SCALING</div>
+      <div class="ai-decision-main">${s.label}</div>
+      <div class="ai-decision-detail">Budget actuel : €${fn(s.currentBudget)}/jour → Recommandé : <strong style="color:${s.color}">€${fn(s.recommendedBudget)}/jour</strong> (${s.change>0?'+':''}${s.change}%)</div>
+      <div style="margin-top:12px">
+        <button onclick="updBudget(${s.recommendedBudget})" style="background:${s.color};color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">⚡ Appliquer €${fn(s.recommendedBudget)}/jour</button>
+      </div>
+    </div>`:'<div style="color:#4b5563;text-align:center;padding:20px;">Pas assez de données pour la décision de scaling</div>'}
+
+    <!-- Budget Calculator -->
+    <div class="ai-budget-calc">
+      <div class="ai-bc-title">💰 Calculateur budget IA</div>
+      <div class="ai-bc-grid">
+        <div class="ai-bc-item"><div class="ai-bc-lbl">Leads/jour nécessaires</div><div class="ai-bc-val">${fn(k.leadsPerDayNeeded)}</div><div class="ai-bc-sub">pour atteindre ${fn(g.totalLeadGoal)} en ${k.daysLeft}j</div></div>
+        <div class="ai-bc-item"><div class="ai-bc-lbl">Budget idéal/jour</div><div class="ai-bc-val" style="color:#10b981">€${fn(k.budgetPerDayIdeal)}</div><div class="ai-bc-sub">au CPL cible €${g.targetCPL}</div></div>
+        <div class="ai-bc-item"><div class="ai-bc-lbl">Budget réaliste/jour</div><div class="ai-bc-val" style="color:#f59e0b">€${fn(k.budgetPerDayNeeded)}</div><div class="ai-bc-sub">au CPL actuel €${f2(k.todayCPL)}</div></div>
+        <div class="ai-bc-item"><div class="ai-bc-lbl">Budget restant</div><div class="ai-bc-val" style="color:#6366f1">€${fn(g.globalBudget-k.weekSpend)}</div><div class="ai-bc-sub">sur €${fn(g.globalBudget)} global</div></div>
+        <div class="ai-bc-item"><div class="ai-bc-lbl">Taux conversion LP</div><div class="ai-bc-val">${k.convRate||'—'}%</div><div class="ai-bc-sub">leads / vues LP</div></div>
+        <div class="ai-bc-item"><div class="ai-bc-lbl">Statut objectif</div><div class="ai-bc-val" style="color:${k.willHitGoal?'#10b981':'#ef4444'}">${k.willHitGoal?'✅ ON TRACK':'⚠️ À RISQUE'}</div><div class="ai-bc-sub">~${fn(k.projectedLeads)} leads prévus</div></div>
+      </div>
+    </div>
+
+    <!-- Recommendations -->
+    <div style="font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:12px">🤖 Recommandations IA — ${recs.length} actions</div>
+    <div class="recs">${recs.map(r=>`
+      <div class="rec re${r.priority.toLowerCase().substring(0,1)}">
+        <div class="remoji">${r.emoji}</div>
+        <div class="rebody">
+          <div class="repri">${r.priority}</div>
+          <div class="retitle">${r.title}</div>
+          <div class="react"><strong>→</strong> ${r.action}</div>
+          <div class="rereason">${r.reason}</div>
+        </div>
+      </div>`).join('')}</div>`;
+}
+
+function cplColor(cpl,g){ return !cpl?'#94a3b8':cpl<=g.targetCPL?'#10b981':cpl<=g.maxAcceptableCPL?'#f59e0b':'#ef4444'; }
+
+// ── SCALING PLAN ──────────────────────────────────────────────────────────────
+function renderScaling(D){
+  const plan=D.ai.scalingPlan||[];
+  const g=D.ai.config;
+
+  document.getElementById('tc-scaling').innerHTML=`
+    <div style="margin-bottom:18px">
+      <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">📈 Plan de Scaling Jour par Jour</div>
+      <div style="font-size:12px;color:#4b5563">Calculé par l'IA selon ton CPL actuel et tes objectifs — actualisé en temps réel</div>
+    </div>
+
+    <!-- Scaling Rules -->
+    <div class="tcard" style="margin-bottom:20px">
+      <div class="thead-row"><div class="ttitle">⚙️ Règles de Scaling (configurables dans Objectifs)</div></div>
+      <div style="padding:16px">
+        <div class="rules-grid">${(g.scalingRules||[]).map(r=>`
+          <div class="rule-row">
+            <div class="rule-cpl" style="color:${r.color}">CPL ≤ €${r.cplMax===9999?'∞':r.cplMax}</div>
+            <div class="rule-action">${r.label}</div>
+            <div class="rule-badge" style="color:${r.color}">${r.action} ${r.budgetMultiplier>0?'× '+r.budgetMultiplier:'PAUSE'}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Day-by-day plan -->
+    <div class="tcard">
+      <div class="thead-row"><div class="ttitle">📅 Plan jour par jour</div><div style="font-size:11px;color:#4b5563">Objectif: ${fn(g.totalLeadGoal)} leads avant ${new Date(g.masterclassDate).toLocaleDateString('fr-FR')}</div></div>
+      <div style="overflow-x:auto">
+        <div class="plan-header"><span>Jour</span><span>Date</span><span>Budget</span><span>CPL est.</span><span>Leads est.</span><span>Cumulatif</span><span>Action</span></div>
+        ${plan.map(p=>`
+          <div class="plan-row ${p.hitGoal?'hit-goal':''}">
+            <span style="color:#64748b;font-weight:600">J${p.day}</span>
+            <span style="color:#e2e8f0">${p.date}</span>
+            <span style="color:#fff;font-weight:600">€${fn(p.budget)}</span>
+            <span class="${cplCls(p.expectedCPL)}">€${f2(p.expectedCPL)}</span>
+            <span style="color:#e2e8f0">${fn(p.expectedLeads)}</span>
+            <span style="color:${p.cumulativeLeads>=g.totalLeadGoal?'#10b981':'#e2e8f0'};font-weight:600">${fn(p.cumulativeLeads)}${p.cumulativeLeads>=g.totalLeadGoal?' ✅':''}</span>
+            <span><span class="action-badge" style="color:${p.color}">${p.action}</span></span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// ── AD SETS ────────────────────────────────────────────────────────────────────
+function renderAdSets(D){
+  const rows=(arr)=>arr.length?arr.map(a=>`<tr>
+    <td class="tname" title="${a.name}">${a.name.substring(0,28)}…</td>
+    <td>€${f2(a.spend)}</td><td>${fn(a.leads)}</td>
+    <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
+    <td>${fn(a.impressions)}</td><td>${f2(a.ctr)}%</td>
+    <td>€${f2(a.cpc)}</td><td>${fn(a.reach)}</td>
+  </tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#4b5563;padding:30px">Aucune donnée</td></tr>';
+  document.getElementById('tc-adsets').innerHTML=`
+    <div class="tcard" style="margin-bottom:20px">
+      <div class="thead-row"><div class="ttitle">📦 Ad Sets — Aujourd'hui</div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>CTR</th><th>CPC</th><th>Reach</th></tr></thead><tbody>${rows(D.adSets.today)}</tbody></table></div>
+    </div>
+    <div class="tcard">
+      <div class="thead-row"><div class="ttitle">📆 Ad Sets — Semaine</div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>CTR</th><th>CPC</th><th>Reach</th></tr></thead><tbody>${rows(D.adSets.week)}</tbody></table></div>
+    </div>`;
+}
+
+// ── ADS ────────────────────────────────────────────────────────────────────────
+function renderAds(D){
+  const ads=D.ads.today;
+  const rows=ads.length?ads.map(a=>`<tr>
+    <td class="tname" title="${a.name}">${a.name.substring(0,22)}…</td>
+    <td class="tname" style="font-size:10px;color:#4b5563">${a.adsetName?.substring(0,22)||'—'}…</td>
+    <td>€${f2(a.spend)}</td><td>${fn(a.leads)}</td>
+    <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
+    <td>${f2(a.ctr)}%</td><td>€${f2(a.cpc)}</td>
+  </tr>`).join(''):'<tr><td colspan="7" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>';
+  document.getElementById('tc-ads').innerHTML=`
+    <div class="tcard">
+      <div class="thead-row"><div class="ttitle">🎯 Publicités — Aujourd'hui (triées CPL)</div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>`;
+}
+
+// ── SCRIPTS ────────────────────────────────────────────────────────────────────
+function renderScripts(D){
+  window._scripts=D.scripts;
+  document.getElementById('tc-scripts').innerHTML=`
+    <div style="margin-bottom:18px">
+      <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">✍️ Scripts Publicitaires IA</div>
+      <div style="font-size:12px;color:#4b5563">Générés pour "${D.ai.config.offerName}" — Actualisés selon tes paramètres</div>
+    </div>
+    <div class="sgrid">${D.scripts.map(s=>`
+      <div class="scard">
+        <div class="stop"><div><div class="stype">${s.type}</div><div class="stitle">${s.title}</div><div class="starget">🎯 ${s.target}</div></div><div class="sbadge">${s.badge}</div></div>
+        <div class="shook">"${s.hook}"</div>
+        <div class="sbody">${s.script}</div>
+        <div class="sact">
+          <button class="cbtn" onclick="cpyS(${s.id},this)">📋 Copier script</button>
+          <button class="cbtn" onclick="cpyH(${s.id},this)">🎣 Copier hook</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+}
+function cpyS(id,btn){ const s=window._scripts.find(x=>x.id===id); if(!s)return; navigator.clipboard.writeText(s.script).then(()=>{btn.textContent='✅ Copié!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='📋 Copier script';btn.classList.remove('copied')},2000);}); }
+function cpyH(id,btn){ const s=window._scripts.find(x=>x.id===id); if(!s)return; navigator.clipboard.writeText(s.hook).then(()=>{btn.textContent='✅ Copié!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='🎣 Copier hook';btn.classList.remove('copied')},2000);}); }
+
+// ── INSTAGRAM ─────────────────────────────────────────────────────────────────
+async function loadIG(){
+  try{
+    const r=await fetch('/api/instagram'); const d=await r.json();
+    if(d.connected){
+      const ig=d.instagram, fb=d.facebook, posts=d.recentMedia||[];
+      document.getElementById('tc-instagram').innerHTML=`
+        ${ig?`<div class="ig-grid">
+          <div class="ig-stat"><div class="ig-sv">${fn(ig.followers_count)}</div><div class="ig-sl">📸 Followers Instagram</div></div>
+          <div class="ig-stat"><div class="ig-sv">${fn(ig.media_count)}</div><div class="ig-sl">🖼️ Posts totaux</div></div>
+          <div class="ig-stat"><div class="ig-sv">${fn(fb?.fans)}</div><div class="ig-sl">👍 Fans Facebook</div></div>
+        </div>`:''}
+        <div class="tcard">
+          <div class="thead-row"><div class="ttitle">📸 Derniers posts Instagram</div></div>
+          <div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Type</th><th>❤️ Likes</th><th>💬 Commentaires</th><th>Lien</th></tr></thead>
+          <tbody>${posts.map(p=>`<tr><td>${new Date(p.timestamp).toLocaleDateString('fr-FR')}</td><td>${p.media_type}</td><td>${p.like_count||'—'}</td><td>${p.comments_count||'—'}</td><td><a href="${p.permalink}" target="_blank">Voir</a></td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:#4b5563;padding:20px">Aucun post</td></tr>'}</tbody>
+          </table></div>
+        </div>`;
+    } else {
+      document.getElementById('tc-instagram').innerHTML=`
+        <div class="ig-con">
+          <div style="font-size:40px;margin-bottom:12px">📸</div>
+          <h3>Instagram & Facebook — Non connecté</h3>
+          <p>Le token actuel manque des permissions pages. Génère un nouveau token avec ces permissions :</p>
+          <div class="ig-steps">
+            <div class="ig-step">1️⃣ Va sur <strong>developers.facebook.com/tools/explorer</strong></div>
+            <div class="ig-step">2️⃣ Ajoute : <code>pages_show_list</code> <code>read_insights</code> <code>instagram_basic</code> <code>instagram_manage_insights</code></div>
+            <div class="ig-step">3️⃣ Génère le token et copie-le dans <code>server.js</code> ligne 9 (ACCESS_TOKEN)</div>
+            <div class="ig-step">4️⃣ Redémarre le serveur → actualise</div>
+          </div>
+        </div>`;
+    }
+  }catch(e){ document.getElementById('tc-instagram').innerHTML=`<div style="color:#4b5563;text-align:center;padding:40px">Erreur: ${e.message}</div>`; }
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+function renderSettings(){
+  const c=CFG||{};
+  document.getElementById('tc-settings').innerHTML=`
+    <div style="margin-bottom:18px">
+      <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">⚙️ Objectifs Client & Configuration IA</div>
+      <div style="font-size:12px;color:#4b5563">Ces paramètres alimentent toutes les analyses et recommandations IA</div>
+    </div>
+
+    <div class="sform">
+      <h3>🎯 Offre & Niche</h3>
+      <div class="fgrid">
+        <div class="fgroup"><label class="flbl">Nom de l'offre</label><input class="finp" id="f-offerName" value="${c.offerName||''}" placeholder="Lance ton Business..."></div>
+        <div class="fgroup"><label class="flbl">Niche</label><input class="finp" id="f-niche" value="${c.niche||''}" placeholder="Business & Entrepreneuriat"></div>
+        <div class="fgroup"><label class="flbl">Prix de l'offre (€)</label><input class="finp" type="number" id="f-offerPrice" value="${c.offerPrice||5000}"></div>
+      </div>
+    </div>
+
+    <div class="sform">
+      <h3>📅 Masterclass / Événement</h3>
+      <div class="fgrid">
+        <div class="fgroup"><label class="flbl">Nom de l'événement</label><input class="finp" id="f-masterclassName" value="${c.masterclassName||'Masterclass Gratuite'}"></div>
+        <div class="fgroup"><label class="flbl">Date & heure</label><input class="finp" type="datetime-local" id="f-masterclassDate" value="${c.masterclassDate?c.masterclassDate.substring(0,16):''}"></div>
+      </div>
+    </div>
+
+    <div class="sform">
+      <h3>🎯 Objectifs Leads</h3>
+      <div class="fgrid">
+        <div class="fgroup"><label class="flbl">Objectif total de leads</label><input class="finp" type="number" id="f-totalLeadGoal" value="${c.totalLeadGoal||400}" placeholder="400"></div>
+        <div class="fgroup"><label class="flbl">Nombre de jours d'acquisition</label><input class="finp" type="number" id="f-acquisitionDays" value="${c.acquisitionDays||7}" placeholder="7"></div>
+      </div>
+      <div style="margin-top:12px;background:#080b14;border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:#4b5563;margin-bottom:8px">📊 Calcul automatique IA</div>
+        <div id="calc-preview" style="font-size:13px;color:#94a3b8">Remplis les champs pour voir le calcul</div>
+      </div>
+    </div>
+
+    <div class="sform">
+      <h3>💰 Budget & CPL</h3>
+      <div class="fgrid">
+        <div class="fgroup"><label class="flbl">Budget global (€)</label><input class="finp" type="number" id="f-globalBudget" value="${c.globalBudget||4000}" placeholder="4000"></div>
+        <div class="fgroup"><label class="flbl">Budget de départ/jour (€)</label><input class="finp" type="number" id="f-dailyBudgetStart" value="${c.dailyBudgetStart||350}" placeholder="350"></div>
+        <div class="fgroup"><label class="flbl">CPL cible (€)</label><input class="finp" type="number" id="f-targetCPL" value="${c.targetCPL||6}" placeholder="6"></div>
+        <div class="fgroup"><label class="flbl">CPL maximum acceptable (€)</label><input class="finp" type="number" id="f-maxAcceptableCPL" value="${c.maxAcceptableCPL||10}" placeholder="10"></div>
+      </div>
+    </div>
+
+    <div class="sform">
+      <h3>📈 Règles de Scaling Automatique</h3>
+      <div style="font-size:12px;color:#4b5563;margin-bottom:14px">L'IA applique ces règles automatiquement selon le CPL du jour</div>
+      <div id="rules-editor">
+        ${(c.scalingRules||[]).map((r,i)=>`
+          <div style="display:grid;grid-template-columns:120px 1fr 120px;gap:10px;align-items:center;margin-bottom:10px;background:#080b14;border-radius:10px;padding:12px 14px">
+            <div><label class="flbl" style="margin-bottom:4px">CPL max (€)</label><input class="finp" id="rule-cpl-${i}" value="${r.cplMax===9999?'':r.cplMax}" placeholder="∞" style="padding:8px 10px"></div>
+            <div><label class="flbl" style="margin-bottom:4px">Label</label><input class="finp" id="rule-lbl-${i}" value="${r.label}" style="padding:8px 10px"></div>
+            <div><label class="flbl" style="margin-bottom:4px">Multiplicateur</label><input class="finp" type="number" id="rule-mul-${i}" value="${r.budgetMultiplier}" step="0.1" style="padding:8px 10px"></div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <button class="fsave" id="saveBtn" onclick="saveSettings()">💾 Sauvegarder et recalculer</button>`;
+
+  // Live calc preview
+  ['f-totalLeadGoal','f-acquisitionDays','f-globalBudget','f-targetCPL','f-maxAcceptableCPL'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input',updateCalcPreview);
+  });
+  updateCalcPreview();
+}
+
+function updateCalcPreview(){
+  const goal=parseFloat(document.getElementById('f-totalLeadGoal')?.value)||400;
+  const days=parseFloat(document.getElementById('f-acquisitionDays')?.value)||7;
+  const budget=parseFloat(document.getElementById('f-globalBudget')?.value)||4000;
+  const cpl=parseFloat(document.getElementById('f-targetCPL')?.value)||6;
+  const leadsPerDay=Math.ceil(goal/days);
+  const budgetPerDay=Math.ceil(leadsPerDay*cpl);
+  const totalNeeded=budgetPerDay*days;
+  const el=document.getElementById('calc-preview');
+  if(el) el.innerHTML=`
+    <span style="color:#fff;font-weight:600">${goal} leads en ${days} jours</span> =
+    <span style="color:#6366f1;font-weight:600"> ${leadsPerDay} leads/jour</span> ×
+    <span style="color:#10b981;font-weight:600"> €${cpl} CPL</span> =
+    <span style="color:#f59e0b;font-weight:600"> €${budgetPerDay}/jour</span>
+    ${totalNeeded>budget?`<span style="color:#ef4444"> ⚠️ Budget nécessaire €${totalNeeded.toLocaleString('fr-FR')} > budget global €${budget.toLocaleString('fr-FR')}</span>`:`<span style="color:#10b981"> ✅ Budget suffisant</span>`}`;
+}
+
+async function saveSettings(){
+  const btn=document.getElementById('saveBtn');
+  const rules=[];
+  const c=CFG||{};
+  (c.scalingRules||[]).forEach((r,i)=>{
+    const cpl=document.getElementById(`rule-cpl-${i}`)?.value;
+    rules.push({...r,cplMax:cpl?parseFloat(cpl):9999,label:document.getElementById(`rule-lbl-${i}`)?.value||r.label,budgetMultiplier:parseFloat(document.getElementById(`rule-mul-${i}`)?.value)||r.budgetMultiplier});
+  });
+  const config={
+    offerName:document.getElementById('f-offerName')?.value,
+    niche:document.getElementById('f-niche')?.value,
+    offerPrice:parseFloat(document.getElementById('f-offerPrice')?.value)||5000,
+    masterclassName:document.getElementById('f-masterclassName')?.value,
+    masterclassDate:document.getElementById('f-masterclassDate')?.value,
+    totalLeadGoal:parseInt(document.getElementById('f-totalLeadGoal')?.value)||400,
+    acquisitionDays:parseInt(document.getElementById('f-acquisitionDays')?.value)||7,
+    globalBudget:parseFloat(document.getElementById('f-globalBudget')?.value)||4000,
+    dailyBudgetStart:parseFloat(document.getElementById('f-dailyBudgetStart')?.value)||350,
+    targetCPL:parseFloat(document.getElementById('f-targetCPL')?.value)||6,
+    maxAcceptableCPL:parseFloat(document.getElementById('f-maxAcceptableCPL')?.value)||10,
+    scalingRules:rules
+  };
+  try{
+    const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});
+    const d=await r.json();
+    if(d.success){
+      CFG=d.config;
+      btn.textContent='✅ Sauvegardé !'; btn.classList.add('fsaved');
+      setTimeout(()=>{btn.textContent='💾 Sauvegarder et recalculer';btn.classList.remove('fsaved')},2500);
+      toast('✅ Config sauvegardée — rechargement...');
+      setTimeout(load,1000);
+    }
+  }catch(e){ toast('Erreur: '+e.message,true); }
+}
+
+// ── BUDGET UPDATE ──────────────────────────────────────────────────────────────
+async function updBudget(amount){
+  if(!confirm(`Mettre le budget à €${amount}/jour ?`)) return;
+  try{
+    const r=await fetch('/api/budget',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({budget:amount})});
+    const d=await r.json();
+    if(d.success){ toast(d.message); setTimeout(load,2000); }
+    else toast('Erreur: '+(d.error||'?'),true);
+  }catch(e){ toast('Erreur réseau',true); }
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────────
+load();
+setInterval(load, 5*60*1000); // auto-refresh every 5min
+</script>
+</body>
+</html>

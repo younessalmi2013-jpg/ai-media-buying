@@ -217,6 +217,45 @@ function buildRecs(cfg, data) {
   return recs;
 }
 
+function buildOptimizationActions(cfg, adSetsToday, adSetsWeek, adsToday, adsWeek) {
+  const tCPL = cfg.targetCPL, maxCPL = cfg.maxAcceptableCPL;
+
+  // Score ad sets — priorité sur data semaine (plus fiable), fallback today
+  const scored = adSetsWeek.length ? adSetsWeek : adSetsToday;
+  const adSetActions = scored.map(a => {
+    let action = 'WATCH', color = '#94a3b8', priority = 0;
+    if (a.leads === 0 && a.spend > 25) { action = 'PAUSE'; color = '#ef4444'; priority = 4; }
+    else if (a.cpl && a.cpl > maxCPL * 1.2) { action = 'PAUSE'; color = '#dc2626'; priority = 4; }
+    else if (a.cpl && a.cpl > maxCPL) { action = 'REDUCE'; color = '#ef4444'; priority = 3; }
+    else if (a.cpl && a.cpl <= tCPL) { action = 'SCALE'; color = '#10b981'; priority = 1; }
+    else if (a.cpl && a.cpl <= tCPL * 1.3) { action = 'MAINTAIN'; color = '#f59e0b'; priority = 2; }
+    else { action = 'WATCH'; color = '#64748b'; priority = 0; }
+    return { ...a, action, color, priority };
+  }).sort((a, b) => b.priority - a.priority);
+
+  // Score créatives — semaine prioritaire
+  const adsPool = adsWeek.length ? adsWeek : adsToday;
+  const withCPL = adsPool.filter(a => a.cpl != null && a.cpl > 0);
+  const avgCPL = withCPL.length ? withCPL.reduce((s, a) => s + a.cpl, 0) / withCPL.length : tCPL;
+  const adActions = adsPool.map(a => {
+    let badge = 'NORMAL', color = '#94a3b8', score = 50;
+    if (a.leads === 0 && a.spend > 12) { badge = 'PAUSE'; color = '#ef4444'; score = 0; }
+    else if (a.cpl && a.cpl > maxCPL) { badge = 'PAUSE'; color = '#ef4444'; score = 5; }
+    else if (a.cpl && a.cpl <= tCPL) { badge = 'TOP'; color = '#10b981'; score = 100; }
+    else if (a.cpl && a.cpl < avgCPL * 0.85) { badge = 'BOOST'; color = '#8b5cf6'; score = 80; }
+    else if (a.cpl && a.cpl <= tCPL * 1.4) { badge = 'OK'; color = '#f59e0b'; score = 55; }
+    else { badge = 'NORMAL'; color = '#64748b'; score = 30; }
+    return { ...a, badge, color, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const toPause = adSetActions.filter(a => a.action === 'PAUSE').length;
+  const toScale = adSetActions.filter(a => a.action === 'SCALE').length;
+  const topCreatives = adActions.filter(a => a.badge === 'TOP').length;
+  const pauseCreatives = adActions.filter(a => a.badge === 'PAUSE').length;
+
+  return { adSetActions, adActions, avgCPL: parseFloat(avgCPL.toFixed(2)), summary: { toPause, toScale, topCreatives, pauseCreatives } };
+}
+
 function getScripts(cfg) {
   const mc = new Date(cfg.masterclassDate);
   const dateStr = mc.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
@@ -277,23 +316,29 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/dashboard' && req.method === 'GET') {
     try {
       const cfg = loadConfig();
-      const [todayRaw, weekRaw, adSetsToday, adSetsWeek, adsToday, campInfo] = await Promise.all([
+      const [todayRaw, weekRaw, adSetsToday, adSetsWeek, adsToday, adsWeek, campInfo] = await Promise.all([
         getCampaignInsights('today', cfg.campaignId),
         getCampaignInsights('this_week_mon_today', cfg.campaignId),
         getAdSetsInsights('today', cfg.campaignId, cfg.adAccountId),
         getAdSetsInsights('this_week_mon_today', cfg.campaignId, cfg.adAccountId),
         getAdsInsights('today', cfg.campaignId, cfg.adAccountId),
+        getAdsInsights('this_week_mon_today', cfg.campaignId, cfg.adAccountId),
         getCampaignInfo(cfg.campaignId)
       ]);
       const adSetsTodayProc = processAdSets(adSetsToday);
+      const adSetsWeekProc = processAdSets(adSetsWeek);
+      const adsTodayProc = processAdSets(adsToday).sort((a,b)=>(a.cpl||999)-(b.cpl||999));
+      const adsWeekProc = processAdSets(adsWeek).sort((a,b)=>(a.cpl||999)-(b.cpl||999));
       const ai = buildAI(cfg, todayRaw, weekRaw, adSetsTodayProc, campInfo);
+      const optimization = buildOptimizationActions(cfg, adSetsTodayProc, adSetsWeekProc, adsTodayProc, adsWeekProc);
       return json(res, {
         ai,
         today: { ...ai.kpis, impressions: parseInt(todayRaw?.impressions||0), reach: parseInt(todayRaw?.reach||0), ctr: parseFloat(todayRaw?.ctr||0), cpc: parseFloat(todayRaw?.cpc||0) },
         week: { spend: ai.kpis.weekSpend, leads: ai.kpis.weekLeads, cpl: ai.kpis.weekCPL, impressions: parseInt(weekRaw?.impressions||0), clicks: parseInt(weekRaw?.clicks||0), reach: parseInt(weekRaw?.reach||0), ctr: parseFloat(weekRaw?.ctr||0) },
         campaign: { name: campInfo?.name||cfg.offerName, status: campInfo?.status||'ACTIVE', dailyBudget: campInfo?.daily_budget?parseInt(campInfo.daily_budget)/100:cfg.dailyBudgetStart, id: cfg.campaignId },
-        adSets: { today: adSetsTodayProc, week: processAdSets(adSetsWeek) },
-        ads: { today: processAdSets(adsToday).sort((a,b)=>(a.cpl||999)-(b.cpl||999)) },
+        adSets: { today: adSetsTodayProc, week: adSetsWeekProc },
+        ads: { today: adsTodayProc, week: adsWeekProc },
+        optimization,
         scripts: getScripts(cfg),
         lastUpdated: new Date().toISOString()
       });
@@ -307,6 +352,26 @@ const server = http.createServer(async (req, res) => {
       const cents = Math.round(parseFloat(budget)*100);
       const r = await apiPost(`/${API_VERSION}/${cfg.campaignId}`, { access_token: ACCESS_TOKEN, daily_budget: cents });
       if (r?.success || r?.id) return json(res, { success: true, message: `✅ Budget mis à jour : €${budget}/jour` });
+      return json(res, { success: false, error: JSON.stringify(r) }, 400);
+    } catch(e) { return json(res, { error: e.message }, 500); }
+  }
+
+  if (pathname === '/api/adset-action' && req.method === 'POST') {
+    try {
+      const { id, status } = await readBody(req);
+      if (!id || !['PAUSED','ACTIVE'].includes(status)) return json(res, { success: false, error: 'id et status requis (PAUSED|ACTIVE)' }, 400);
+      const r = await apiPost(`/${API_VERSION}/${id}`, { access_token: ACCESS_TOKEN, status });
+      if (r?.success || r?.id) return json(res, { success: true, message: `Ad Set ${status === 'PAUSED' ? '⏸️ mis en pause' : '▶️ activé'}` });
+      return json(res, { success: false, error: JSON.stringify(r) }, 400);
+    } catch(e) { return json(res, { error: e.message }, 500); }
+  }
+
+  if (pathname === '/api/ad-action' && req.method === 'POST') {
+    try {
+      const { id, status } = await readBody(req);
+      if (!id || !['PAUSED','ACTIVE'].includes(status)) return json(res, { success: false, error: 'id et status requis (PAUSED|ACTIVE)' }, 400);
+      const r = await apiPost(`/${API_VERSION}/${id}`, { access_token: ACCESS_TOKEN, status });
+      if (r?.success || r?.id) return json(res, { success: true, message: `Pub ${status === 'PAUSED' ? '⏸️ mise en pause' : '▶️ activée'}` });
       return json(res, { success: false, error: JSON.stringify(r) }, 400);
     } catch(e) { return json(res, { error: e.message }, 500); }
   }

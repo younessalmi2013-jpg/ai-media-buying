@@ -1,0 +1,12 @@
+{
+  "name": "ai-media-buying-dashboard",
+  "version": "1.0.0",
+  "description": "AI Media Buying Dashboard - Slimane Wake Up Academy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

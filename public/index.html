@@ -234,6 +234,7 @@
     <button class="tab" onclick="sw('scaling')">📈 Plan Scaling</button>
     <button class="tab" onclick="sw('adsets')">📦 Ad Sets</button>
     <button class="tab" onclick="sw('ads')">🎯 Pubs</button>
+    <button class="tab" onclick="sw('optimization')">⚡ Optimisation</button>
     <button class="tab" onclick="sw('scripts')">✍️ Scripts</button>
     <button class="tab" onclick="sw('instagram')">📸 Instagram</button>
     <button class="tab" onclick="sw('settings')">⚙️ Objectifs</button>
@@ -244,6 +245,7 @@
   <div class="tc" id="tc-scaling"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-adsets"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-ads"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-optimization"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-scripts"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-instagram"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-settings"><div class="loading"><div class="spin"></div></div></div>
@@ -269,7 +271,7 @@ function ago(iso){ const s=Math.floor((Date.now()-new Date(iso))/1000); return s
 
 function sw(tab){
   document.querySelectorAll('.tab').forEach((t,i)=>{
-    const ts=['dashboard','ai','scaling','adsets','ads','scripts','instagram','settings'];
+    const ts=['dashboard','ai','scaling','adsets','ads','optimization','scripts','instagram','settings'];
     t.classList.toggle('active',ts[i]===tab);
   });
   document.querySelectorAll('.tc').forEach(c=>c.classList.remove('active'));
@@ -303,10 +305,10 @@ async function load(){
 }
 
 function renderAll(){
-  ['dashboard','ai','scaling','adsets','ads','scripts'].forEach(renderTab);
+  ['dashboard','ai','scaling','adsets','ads','optimization','scripts'].forEach(renderTab);
   loadIG();
 }
-function renderTab(t){ if(!D) return; const fns={dashboard:renderDashboard,ai:renderAI,scaling:renderScaling,adsets:renderAdSets,ads:renderAds,scripts:renderScripts}; if(fns[t]) fns[t](D); }
+function renderTab(t){ if(!D) return; const fns={dashboard:renderDashboard,ai:renderAI,scaling:renderScaling,adsets:renderAdSets,ads:renderAds,optimization:renderOptimization,scripts:renderScripts}; if(fns[t]) fns[t](D); }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 function renderDashboard(D){
@@ -530,19 +532,145 @@ function renderAdSets(D){
 }
 
 // ── ADS ────────────────────────────────────────────────────────────────────────
+function adBadgeHtml(badge,color){ return `<span style="background:${color}20;color:${color};border:1px solid ${color}40;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px">${badge}</span>`; }
 function renderAds(D){
-  const ads=D.ads.today;
-  const rows=ads.length?ads.map(a=>`<tr>
-    <td class="tname" title="${a.name}">${a.name.substring(0,22)}…</td>
-    <td class="tname" style="font-size:10px;color:#4b5563">${a.adsetName?.substring(0,22)||'—'}…</td>
+  const opt=D.optimization||{};
+  const adsW=opt.adActions||[];
+  const rows=(arr,showBadge)=>arr.length?arr.map(a=>`<tr>
+    <td class="tname" title="${a.name}">${a.name.substring(0,24)}…</td>
+    <td class="tname" style="font-size:10px;color:#4b5563">${(a.adsetName||'—').substring(0,20)}…</td>
+    ${showBadge?`<td>${adBadgeHtml(a.badge||'—',a.color||'#64748b')}</td>`:''}
     <td>€${f2(a.spend)}</td><td>${fn(a.leads)}</td>
     <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
     <td>${f2(a.ctr)}%</td><td>€${f2(a.cpc)}</td>
-  </tr>`).join(''):'<tr><td colspan="7" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>';
+  </tr>`).join(''):`<tr><td colspan="${showBadge?8:7}" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>`;
   document.getElementById('tc-ads').innerHTML=`
+    <div class="tcard" style="margin-bottom:20px">
+      <div class="thead-row"><div class="ttitle">🎯 Publicités — Semaine (avec scoring IA)</div><div style="font-size:11px;color:#4b5563">CPL moy: €${f2(opt.avgCPL)} — ${adsW.filter(a=>a.badge==='TOP').length} TOP / ${adsW.filter(a=>a.badge==='PAUSE').length} à couper</div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Score</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th></tr></thead><tbody>${rows(adsW,true)}</tbody></table></div>
+    </div>
     <div class="tcard">
-      <div class="thead-row"><div class="ttitle">🎯 Publicités — Aujourd'hui (triées CPL)</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="thead-row"><div class="ttitle">📅 Publicités — Aujourd'hui</div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th></tr></thead><tbody>${rows(D.ads.today,false)}</tbody></table></div>
+    </div>`;
+}
+
+// ── OPTIMISATION ──────────────────────────────────────────────────────────────
+async function doAdSetAction(id,name,status){
+  const label=status==='PAUSED'?'mettre en pause':'activer';
+  if(!confirm(`${label} l'ad set "${name}" ?`)) return;
+  try{
+    const r=await fetch('/api/adset-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})});
+    const d=await r.json();
+    if(d.success){ toast(d.message); setTimeout(load,1500); }
+    else toast('Erreur: '+(d.error||'?'),true);
+  }catch(e){ toast('Erreur réseau',true); }
+}
+async function doAdAction(id,name,status){
+  const label=status==='PAUSED'?'mettre en pause':'activer';
+  if(!confirm(`${label} la pub "${name}" ?`)) return;
+  try{
+    const r=await fetch('/api/ad-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status})});
+    const d=await r.json();
+    if(d.success){ toast(d.message); setTimeout(load,1500); }
+    else toast('Erreur: '+(d.error||'?'),true);
+  }catch(e){ toast('Erreur réseau',true); }
+}
+
+function renderOptimization(D){
+  const opt=D.optimization||{};
+  const sets=opt.adSetActions||[];
+  const ads=opt.adActions||[];
+  const s=opt.summary||{};
+  const cfg=D.ai?.config||{};
+
+  const actionBadge=(action,color)=>`<span style="background:${color}20;color:${color};border:1px solid ${color}40;font-size:11px;font-weight:700;padding:3px 9px;border-radius:5px">${action}</span>`;
+  const actionBtn=(id,name,curAction,type)=>{
+    if(curAction==='PAUSE') return `<button onclick="do${type}Action('${id}','${name.replace(/'/g,"\\'")}','PAUSED')" style="background:#ef444420;color:#ef4444;border:1px solid #ef444440;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">⏸ Pause</button>`;
+    if(curAction==='SCALE') return `<button onclick="do${type}Action('${id}','${name.replace(/'/g,"\\'")}','PAUSED')" style="background:#6366f120;color:#94a3b8;border:1px solid #1f2d47;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">⏸ Pause</button>`;
+    return `<button onclick="do${type}Action('${id}','${name.replace(/'/g,"\\'")}','PAUSED')" style="background:#64748b20;color:#64748b;border:1px solid #1f2d47;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">⏸ Pause</button>`;
+  };
+
+  document.getElementById('tc-optimization').innerHTML=`
+    <!-- Summary cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px">
+      <div style="background:#ef444415;border:1px solid #ef444430;border-radius:12px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#ef4444">${s.toPause||0}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px">⛔ Ad Sets à couper</div>
+      </div>
+      <div style="background:#10b98115;border:1px solid #10b98130;border-radius:12px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#10b981">${s.toScale||0}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px">🚀 Ad Sets à scaler</div>
+      </div>
+      <div style="background:#10b98115;border:1px solid #10b98130;border-radius:12px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#10b981">${s.topCreatives||0}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px">⭐ Top créatives</div>
+      </div>
+      <div style="background:#ef444415;border:1px solid #ef444430;border-radius:12px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#ef4444">${s.pauseCreatives||0}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px">❌ Créatives à couper</div>
+      </div>
+      <div style="background:#0d1122;border:1px solid #1a2238;border-radius:12px;padding:16px;text-align:center">
+        <div style="font-size:28px;font-weight:800;color:#f59e0b">€${f2(opt.avgCPL)}</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px">📊 CPL moyen créatives</div>
+      </div>
+    </div>
+
+    <!-- Ad Sets actions -->
+    <div class="tcard" style="margin-bottom:20px">
+      <div class="thead-row">
+        <div class="ttitle">📦 Ad Sets — Décisions IA (données semaine)</div>
+        <div style="font-size:11px;color:#4b5563">CPL cible: €${cfg.targetCPL} | Max: €${cfg.maxAcceptableCPL}</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Ad Set</th><th>Action IA</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>Action</th></tr></thead>
+          <tbody>
+            ${sets.length?sets.map(a=>`<tr style="background:${a.action==='PAUSE'?'#ef444408':a.action==='SCALE'?'#10b98108':'transparent'}">
+              <td class="tname" title="${a.name}">${a.name.substring(0,26)}…</td>
+              <td>${actionBadge(a.action,a.color)}</td>
+              <td>€${f2(a.spend)}</td>
+              <td>${fn(a.leads)}</td>
+              <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
+              <td>${f2(a.ctr)}%</td>
+              <td>${actionBtn(a.id,a.name,a.action,'AdSet')}</td>
+            </tr>`).join(''):'<tr><td colspan="7" style="text-align:center;color:#4b5563;padding:30px">Aucune donnée — actualise le dashboard</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Créatives scoring -->
+    <div class="tcard">
+      <div class="thead-row">
+        <div class="ttitle">🎨 Créatives — Scoring IA (données semaine)</div>
+        <div style="font-size:11px;color:#4b5563">Triées par performance — TOP = CPL ≤ €${cfg.targetCPL}</div>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Créative</th><th>Ad Set</th><th>Badge</th><th>Score</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>Action</th></tr></thead>
+          <tbody>
+            ${ads.length?ads.map(a=>`<tr style="background:${a.badge==='PAUSE'?'#ef444408':a.badge==='TOP'||a.badge==='BOOST'?'#10b98108':'transparent'}">
+              <td class="tname" title="${a.name}">${a.name.substring(0,22)}…</td>
+              <td class="tname" style="font-size:10px;color:#4b5563">${(a.adsetName||'—').substring(0,18)}…</td>
+              <td>${adBadgeHtml(a.badge||'?',a.color||'#64748b')}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div style="width:50px;height:5px;background:#1f2d47;border-radius:3px;overflow:hidden">
+                    <div style="width:${a.score||0}%;height:100%;background:${a.color||'#64748b'};border-radius:3px"></div>
+                  </div>
+                  <span style="font-size:11px;color:#94a3b8">${a.score||0}</span>
+                </div>
+              </td>
+              <td>€${f2(a.spend)}</td>
+              <td>${fn(a.leads)}</td>
+              <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
+              <td>${f2(a.ctr)}%</td>
+              <td>${actionBtn(a.id,a.name,a.badge==='PAUSE'?'PAUSE':'NORMAL','Ad')}</td>
+            </tr>`).join(''):'<tr><td colspan="9" style="text-align:center;color:#4b5563;padding:30px">Aucune donnée — actualise le dashboard</td></tr>'}
+          </tbody>
+        </table>
+      </div>
     </div>`;
 }
 

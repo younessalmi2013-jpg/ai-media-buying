@@ -680,13 +680,14 @@ function renderScripts(D){
   document.getElementById('tc-scripts').innerHTML=`
     <div style="margin-bottom:18px">
       <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">✍️ Scripts Publicitaires IA</div>
-      <div style="font-size:12px;color:#4b5563">Générés pour "${D.ai.config.offerName}" — Actualisés selon tes paramètres</div>
+      <div style="font-size:12px;color:#4b5563">10 formats inspirés YouTube Ads & Facebook Ad Library · Générés pour "${D.ai.config.offerName}"</div>
     </div>
     <div class="sgrid">${D.scripts.map(s=>`
       <div class="scard">
-        <div class="stop"><div><div class="stype">${s.type}</div><div class="stitle">${s.title}</div><div class="starget">🎯 ${s.target}</div></div><div class="sbadge">${s.badge}</div></div>
+        <div class="stop"><div><div class="stype">${s.type}</div><div class="stitle">${s.title}</div><div style="font-size:11px;color:#6366f1;margin-top:4px">${s.platform||''}</div></div><div class="sbadge">${s.badge}</div></div>
         <div class="shook">"${s.hook}"</div>
-        <div class="sbody">${s.script}</div>
+        ${s.insight?`<div style="background:#0d1122;border-radius:8px;padding:9px 12px;font-size:11px;color:#64748b;margin:8px 0;line-height:1.5;border-left:3px solid #1f2d47">${s.insight}</div>`:''}
+        <div class="sbody">${s.script.replace(/\n/g,'<br>')}</div>
         <div class="sact">
           <button class="cbtn" onclick="cpyS(${s.id},this)">📋 Copier script</button>
           <button class="cbtn" onclick="cpyH(${s.id},this)">🎣 Copier hook</button>
@@ -703,16 +704,43 @@ async function loadIG(){
     const r=await fetch('/api/instagram'); const d=await r.json();
     if(d.connected){
       const ig=d.instagram, fb=d.facebook, posts=d.recentMedia||[];
+      const followers=ig?.followers_count||1;
+      const postsEng=posts.map(p=>{
+        const lk=p.like_count||0,cm=p.comments_count||0;
+        const eng=parseFloat(((lk+cm)/followers*100).toFixed(2));
+        let badge='FAIBLE',bc='#ef4444';
+        if(eng>=3){badge='TOP ⭐';bc='#10b981';}
+        else if(eng>=1){badge='MOYEN';bc='#f59e0b';}
+        return{...p,lk,cm,eng,badge,bc};
+      });
+      const topP=postsEng.filter(p=>p.eng>=3);
+      const weakP=postsEng.filter(p=>p.eng<1);
+      const avgEng=postsEng.length?(postsEng.reduce((s,p)=>s+p.eng,0)/postsEng.length).toFixed(2):0;
+      const recs=[];
+      if(topP.length>0) recs.push({icon:'✅',txt:`<strong>${topP.length} post(s) performent très bien</strong> (engagement > 3%) — <em>réutilise ces formats en publicité, ils convertiront mieux qu'une créa studio</em>`});
+      if(weakP.length>topP.length) recs.push({icon:'⚠️',txt:`<strong>${weakP.length} posts sous-performent</strong> — teste des Reels ou des carrousels : ils génèrent 3-5x plus d'engagement que les images statiques`});
+      if(parseFloat(avgEng)<1) recs.push({icon:'📉',txt:`<strong>Engagement global faible (${avgEng}%)</strong> — augmente la fréquence de publication (1 Reel/jour idéal) et utilise des hooks dans les 2 premières secondes de chaque vidéo`});
+      if(parseFloat(avgEng)>=3) recs.push({icon:'🚀',txt:`<strong>Excellent engagement moyen (${avgEng}%)</strong> — tu peux augmenter la fréquence et tester le boost des meilleurs posts en pub Facebook/Instagram`});
+      recs.push({icon:'💡',txt:`<strong>Booste tes posts TOP en publicité</strong> — un post organique qui performe convertit souvent 2x mieux qu'une pub créée de zéro car il a déjà une preuve sociale`});
+      recs.push({icon:'🎯',txt:`<strong>Stratégie contenu recommandée</strong> : 3 Reels éducatifs/semaine (tip rapide), 1 post témoignage client, 1 story coulisses — alterner pour maximiser la portée organique`});
       document.getElementById('tc-instagram').innerHTML=`
+        <div style="margin-bottom:18px"><div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">📸 Instagram & Facebook — Analyse</div><div style="font-size:12px;color:#4b5563">Taux d'engagement calculé : (likes+commentaires)/followers × 100</div></div>
         ${ig?`<div class="ig-grid">
           <div class="ig-stat"><div class="ig-sv">${fn(ig.followers_count)}</div><div class="ig-sl">📸 Followers Instagram</div></div>
           <div class="ig-stat"><div class="ig-sv">${fn(ig.media_count)}</div><div class="ig-sl">🖼️ Posts totaux</div></div>
+          <div class="ig-stat"><div class="ig-sv" style="color:${parseFloat(avgEng)>=3?'#10b981':parseFloat(avgEng)>=1?'#f59e0b':'#ef4444'}">${avgEng}%</div><div class="ig-sl">💜 Engagement moyen</div></div>
           <div class="ig-stat"><div class="ig-sv">${fn(fb?.fans)}</div><div class="ig-sl">👍 Fans Facebook</div></div>
         </div>`:''}
+        <div class="tcard" style="margin-bottom:16px">
+          <div class="thead-row"><div class="ttitle">🔍 Recommandations IA — Ce qui marche / Ce qui ne marche pas</div></div>
+          <div style="padding:14px;display:flex;flex-direction:column;gap:10px">
+            ${recs.map(r=>`<div style="background:#080b14;border-radius:10px;padding:13px 16px;font-size:13px;color:#94a3b8;line-height:1.6;display:flex;gap:10px;align-items:flex-start"><span style="font-size:16px;flex-shrink:0">${r.icon}</span><span>${r.txt}</span></div>`).join('')}
+          </div>
+        </div>
         <div class="tcard">
-          <div class="thead-row"><div class="ttitle">📸 Derniers posts Instagram</div></div>
-          <div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Type</th><th>❤️ Likes</th><th>💬 Commentaires</th><th>Lien</th></tr></thead>
-          <tbody>${posts.map(p=>`<tr><td>${new Date(p.timestamp).toLocaleDateString('fr-FR')}</td><td>${p.media_type}</td><td>${p.like_count||'—'}</td><td>${p.comments_count||'—'}</td><td><a href="${p.permalink}" target="_blank">Voir</a></td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:#4b5563;padding:20px">Aucun post</td></tr>'}</tbody>
+          <div class="thead-row"><div class="ttitle">📊 Analyse par post — Taux d'engagement</div><div style="font-size:11px;color:#4b5563">TOP ≥ 3% · MOYEN 1-3% · FAIBLE &lt; 1%</div></div>
+          <div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Type</th><th>❤️ Likes</th><th>💬 Comments</th><th>📊 Engagement</th><th>Score</th><th>Lien</th></tr></thead>
+          <tbody>${postsEng.map(p=>`<tr><td>${new Date(p.timestamp).toLocaleDateString('fr-FR')}</td><td>${p.media_type}</td><td>${p.lk}</td><td>${p.cm}</td><td><strong>${p.eng}%</strong></td><td><span style="background:${p.bc}22;color:${p.bc};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">${p.badge}</span></td><td><a href="${p.permalink}" target="_blank" style="color:#6366f1">Voir →</a></td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:#4b5563;padding:20px">Aucun post</td></tr>'}</tbody>
           </table></div>
         </div>`;
     } else {
@@ -735,10 +763,55 @@ async function loadIG(){
 // ── SETTINGS ──────────────────────────────────────────────────────────────────
 function renderSettings(){
   const c=CFG||{};
+  // Plan d'action calculé
+  const tCPL=c.targetCPL||6, maxCPL=c.maxAcceptableCPL||10;
+  const goal=c.totalLeadGoal||400, days=c.acquisitionDays||7;
+  const budget=c.globalBudget||4000, dailyStart=c.dailyBudgetStart||350;
+  const leadsPerDay=Math.ceil(goal/days);
+  const budgetNeeded=Math.ceil(leadsPerDay*tCPL);
+  const budgetMax=Math.ceil(leadsPerDay*maxCPL);
+  const convRate=0.30; // 30% conversion masterclass→offre estimate
+  const expectedSales=Math.round(goal*convRate);
+  const price=c.offerPrice||5000;
+  const expectedCA=expectedSales*price;
+  const roi=budget>0?Math.round((expectedCA-budget)/budget*100):0;
   document.getElementById('tc-settings').innerHTML=`
     <div style="margin-bottom:18px">
       <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">⚙️ Objectifs Client & Configuration IA</div>
       <div style="font-size:12px;color:#4b5563">Ces paramètres alimentent toutes les analyses et recommandations IA</div>
+    </div>
+
+    <div class="tcard" style="margin-bottom:20px">
+      <div class="thead-row"><div class="ttitle">🎯 Plan d'action — Comment atteindre l'objectif</div><div style="font-size:11px;color:#4b5563">${goal} leads en ${days} jours</div></div>
+      <div style="padding:18px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px">
+          <div style="background:#080b14;border-radius:10px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#6366f1">${leadsPerDay}</div><div style="font-size:11px;color:#4b5563;margin-top:4px">leads/jour requis</div></div>
+          <div style="background:#080b14;border-radius:10px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#10b981">€${budgetNeeded}</div><div style="font-size:11px;color:#4b5563;margin-top:4px">budget/jour optimal (CPL €${tCPL})</div></div>
+          <div style="background:#080b14;border-radius:10px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#f59e0b">€${budgetMax}</div><div style="font-size:11px;color:#4b5563;margin-top:4px">budget/jour max (CPL €${maxCPL})</div></div>
+          <div style="background:#080b14;border-radius:10px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:700;color:#8b5cf6">€${(expectedCA/1000).toFixed(0)}k</div><div style="font-size:11px;color:#4b5563;margin-top:4px">CA potentiel (~${convRate*100}% conv.)</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="background:#0d1122;border-left:3px solid #10b981;border-radius:0 10px 10px 0;padding:12px 16px">
+            <div style="font-size:12px;font-weight:700;color:#10b981;margin-bottom:4px">✅ ÉTAPE 1 — Lancement (Jour 1-2)</div>
+            <div style="font-size:12px;color:#94a3b8">Démarrer avec <strong>€${dailyStart}/jour</strong> · Tester 3-4 créas différentes · Audiencesfroide Lookalike 1% + 3% · Laisser tourner 48h sans modifier</div>
+          </div>
+          <div style="background:#0d1122;border-left:3px solid #f59e0b;border-radius:0 10px 10px 0;padding:12px 16px">
+            <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:4px">📊 ÉTAPE 2 — Analyse & Optimisation (Jour 3-4)</div>
+            <div style="font-size:12px;color:#94a3b8">Couper les ad sets avec CPL > €${maxCPL} · Doubler le budget des ad sets avec CPL ≤ €${tCPL} · Tester de nouveaux visuels inspirés des TOP créas · Activer retargeting visiteurs LP</div>
+          </div>
+          <div style="background:#0d1122;border-left:3px solid #6366f1;border-radius:0 10px 10px 0;padding:12px 16px">
+            <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:4px">🚀 ÉTAPE 3 — Scaling (Jour 5-${days})</div>
+            <div style="font-size:12px;color:#94a3b8">Monter à €${budgetNeeded}/jour sur les gagnants · Ajouter Lookalike 5-10% si CPL OK · Lancer campagne urgence/FOMO 72h avant masterclass · Objectif : ${leadsPerDay} leads/jour</div>
+          </div>
+          <div style="background:#0d1122;border-left:3px solid #ef4444;border-radius:0 10px 10px 0;padding:12px 16px">
+            <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:4px">⚡ ÉTAPE 4 — Masterclass + Vente</div>
+            <div style="font-size:12px;color:#94a3b8">Arrêter les pubs 6h avant · Relance email à J-24h + J-1h · Objectif conversion : ${Math.round(convRate*100)}% des ${goal} inscrits → ${expectedSales} ventes → <strong>€${expectedCA.toLocaleString('fr-FR')} CA</strong></div>
+          </div>
+        </div>
+        <div style="margin-top:14px;background:#080b14;border-radius:10px;padding:12px 16px;font-size:12px;color:#4b5563">
+          📈 <strong style="color:#94a3b8">ROI estimé :</strong> Budget total €${budget.toLocaleString('fr-FR')} → CA potentiel €${expectedCA.toLocaleString('fr-FR')} → <span style="color:${roi>0?'#10b981':'#ef4444'};font-weight:700">ROI ${roi>0?'+':''}${roi}%</span> · Ces chiffres sont des estimations basées sur tes paramètres
+        </div>
+      </div>
     </div>
 
     <div class="sform">

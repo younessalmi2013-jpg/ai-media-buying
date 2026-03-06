@@ -237,6 +237,8 @@
     <button class="tab" onclick="sw('optimization')">⚡ Optimisation</button>
     <button class="tab" onclick="sw('scripts')">✍️ Scripts</button>
     <button class="tab" onclick="sw('instagram')">📸 Instagram</button>
+    <button class="tab" onclick="sw('analytics')">📈 Analytics</button>
+    <button class="tab" onclick="sw('veille')">🔍 Veille</button>
     <button class="tab" onclick="sw('settings')">⚙️ Objectifs</button>
   </div>
 
@@ -247,6 +249,8 @@
   <div class="tc" id="tc-ads"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-optimization"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-scripts"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-analytics"><div class="loading"><div class="spin"></div></div></div>
+  <div class="tc" id="tc-veille"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-instagram"><div class="loading"><div class="spin"></div></div></div>
   <div class="tc" id="tc-settings"><div class="loading"><div class="spin"></div></div></div>
 </div>
@@ -271,12 +275,14 @@ function ago(iso){ const s=Math.floor((Date.now()-new Date(iso))/1000); return s
 
 function sw(tab){
   document.querySelectorAll('.tab').forEach((t,i)=>{
-    const ts=['dashboard','ai','scaling','adsets','ads','optimization','scripts','instagram','settings'];
+    const ts=['dashboard','ai','scaling','adsets','ads','optimization','scripts','instagram','analytics','veille','settings'];
     t.classList.toggle('active',ts[i]===tab);
   });
   document.querySelectorAll('.tc').forEach(c=>c.classList.remove('active'));
   document.getElementById('tc-'+tab).classList.add('active');
   if(tab==='settings') renderSettings();
+  else if(tab==='analytics') loadAnalytics();
+  else if(tab==='veille') renderVeille();
   else if(D) renderTab(tab);
 }
 
@@ -926,6 +932,208 @@ async function saveSettings(){
       setTimeout(load,1000);
     }
   }catch(e){ toast('Erreur: '+e.message,true); }
+}
+
+// ── ANALYTICS (CPL Trend + Heatmap) ───────────────────────────────────────────
+let analyticsCharts={};
+async function loadAnalytics(period){
+  period=period||'30';
+  const el=document.getElementById('tc-analytics');
+  el.innerHTML=`<div style="padding:40px;text-align:center"><div class="spin" style="margin:0 auto 12px"></div><div style="color:#4b5563">Chargement analytics...</div></div>`;
+  try{
+    const [trendR,heatR]=await Promise.all([fetch('/api/cpl-trend?period='+period),fetch('/api/hourly-heatmap')]);
+    const trend=await trendR.json(); const heat=await heatR.json();
+    renderAnalytics(trend,heat,period);
+  }catch(e){ el.innerHTML=`<div style="padding:30px;color:#ef4444">Erreur: ${e.message}</div>`; }
+}
+
+function renderAnalytics(trend,heat,period){
+  const el=document.getElementById('tc-analytics');
+  const labels=trend.map(d=>d.date.slice(5));
+  const cplData=trend.map(d=>d.cpl||null);
+  const leadsData=trend.map(d=>d.leads);
+  const spendData=trend.map(d=>d.spend);
+  const totalLeads=trend.reduce((s,d)=>s+d.leads,0);
+  const totalSpend=trend.reduce((s,d)=>s+d.spend,0);
+  const avgCPL=totalLeads>0?parseFloat((totalSpend/totalLeads).toFixed(2)):0;
+  const bestDay=trend.filter(d=>d.cpl>0).sort((a,b)=>a.cpl-b.cpl)[0];
+  const worstDay=trend.filter(d=>d.cpl>0).sort((a,b)=>b.cpl-a.cpl)[0];
+
+  // Heatmap: best hours (leads > 0), sorted
+  const hoursWithLeads=heat.filter(h=>h.leads>0).sort((a,b)=>b.leads-a.leads);
+  const maxLeads=Math.max(...heat.map(h=>h.leads),1);
+  const maxSpend=Math.max(...heat.map(h=>h.spend),1);
+
+  // Creative ranking from D
+  const adsRank=(D?.optimization?.adActions||[]).slice(0,8);
+
+  el.innerHTML=`
+  <div style="padding:8px 0 20px">
+    <!-- Toggle period -->
+    <div style="display:flex;gap:8px;margin-bottom:20px">
+      ${['7','14','30'].map(p=>`<button onclick="loadAnalytics('${p}')" style="padding:6px 16px;border-radius:8px;border:1px solid ${p===period?'#6366f1':'#1f2d47'};background:${p===period?'#6366f1':'#111827'};color:${p===period?'#fff':'#94a3b8'};cursor:pointer;font-size:13px">${p} jours</button>`).join('')}
+    </div>
+
+    <!-- KPI row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="kcard"><div class="klbl">📊 Total Leads</div><div class="kval">${totalLeads}</div></div>
+      <div class="kcard"><div class="klbl">💰 Total Dépensé</div><div class="kval">€${f2(totalSpend)}</div></div>
+      <div class="kcard kc-b"><div class="klbl">📈 CPL Moyen</div><div class="kval">€${avgCPL}</div></div>
+      <div class="kcard"><div class="klbl">🏆 Meilleur Jour</div><div class="kval" style="font-size:14px">${bestDay?`${bestDay.date.slice(5)} — €${bestDay.cpl}`:'—'}</div></div>
+    </div>
+
+    <!-- CPL Trend Chart -->
+    <div class="ccrd" style="margin-bottom:20px">
+      <div class="ctitle">📈 Évolution CPL — ${period} derniers jours</div>
+      <div style="position:relative;height:220px"><canvas id="cplTrendChart"></canvas></div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="ccrd" style="margin-bottom:20px">
+      <div class="ctitle">🕐 Meilleures heures de conversion (30 derniers jours)</div>
+      <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:10px">
+        ${heat.slice(0,12).map(h=>{
+          const intensity=h.leads/maxLeads;
+          const bg=h.leads>0?`rgba(99,102,241,${0.15+intensity*0.85})`:'#111827';
+          const border=h.cpl>0&&h.cpl<=(CFG?.targetCPL||8)?'1px solid #10b981':'1px solid #1f2d47';
+          return `<div style="background:${bg};border:${border};border-radius:8px;padding:8px 4px;text-align:center;cursor:default" title="${h.leads} leads · €${h.cpl} CPL · €${h.spend} spend">
+            <div style="font-size:12px;font-weight:700;color:#e2e8f0">${h.hour}h</div>
+            <div style="font-size:11px;color:#94a3b8">${h.leads} leads</div>
+            <div style="font-size:10px;color:${h.cpl>0&&h.cpl<=(CFG?.targetCPL||8)?'#10b981':'#f59e0b'}">${h.cpl>0?'€'+h.cpl:'—'}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-top:4px">
+        ${heat.slice(12).map(h=>{
+          const intensity=h.leads/maxLeads;
+          const bg=h.leads>0?`rgba(99,102,241,${0.15+intensity*0.85})`:'#111827';
+          const border=h.cpl>0&&h.cpl<=(CFG?.targetCPL||8)?'1px solid #10b981':'1px solid #1f2d47';
+          return `<div style="background:${bg};border:${border};border-radius:8px;padding:8px 4px;text-align:center;cursor:default" title="${h.leads} leads · €${h.cpl} CPL">
+            <div style="font-size:12px;font-weight:700;color:#e2e8f0">${h.hour}h</div>
+            <div style="font-size:11px;color:#94a3b8">${h.leads} leads</div>
+            <div style="font-size:10px;color:${h.cpl>0&&h.cpl<=(CFG?.targetCPL||8)?'#10b981':'#f59e0b'}">${h.cpl>0?'€'+h.cpl:'—'}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      ${hoursWithLeads.length>0?`<div style="margin-top:12px;padding:10px;background:#0a1020;border-radius:8px;font-size:12px;color:#94a3b8">
+        ⭐ <strong style="color:#e2e8f0">Meilleure heure :</strong> ${hoursWithLeads[0].hour}h — ${hoursWithLeads[0].leads} leads · €${hoursWithLeads[0].cpl} CPL &nbsp;|&nbsp;
+        🔴 <strong style="color:#e2e8f0">Heure à éviter :</strong> ${heat.filter(h=>h.spend>2&&h.leads===0).sort((a,b)=>b.spend-a.spend)[0]?.hour||'?'}h (spend sans leads)
+      </div>`:''}
+    </div>
+
+    <!-- Creative Ranking -->
+    ${adsRank.length>0?`<div class="ccrd">
+      <div class="thead-row"><div class="ttitle">🏆 Classement Créatives — Semaine</div><div style="font-size:11px;color:#4b5563">Classées par score IA (CPL + leads + CTR)</div></div>
+      <table><thead><tr><th>#</th><th>Créative</th><th>Badge</th><th>Leads</th><th>CPL</th><th>Dépense</th><th>CTR</th><th>Action</th></tr></thead><tbody>
+      ${adsRank.map((a,i)=>`<tr>
+        <td style="font-weight:700;color:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#cd7f32':'#4b5563'}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${a.name||a.id}</td>
+        <td><span style="background:${a.color}22;color:${a.color};border:1px solid ${a.color}44;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">${a.badge}</span></td>
+        <td style="font-weight:600">${a.leads}</td>
+        <td style="color:${a.cpl&&a.cpl<=(CFG?.targetCPL||8)?'#10b981':'#ef4444'}">${a.cpl?'€'+f2(a.cpl):'—'}</td>
+        <td>€${f2(a.spend)}</td>
+        <td>${a.ctr?f2(a.ctr)+'%':'—'}</td>
+        <td>${a.badge==='PAUSE'?`<button onclick="actAd('${a.id}','PAUSED')" style="background:#ef444422;color:#ef4444;border:1px solid #ef444444;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer">⏸ Pause</button>`:a.badge==='TOP'||a.badge==='BOOST'?`<span style="color:#10b981;font-size:11px">✅ Garder</span>`:`<span style="color:#94a3b8;font-size:11px">👁 Surveiller</span>`}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>`:''}
+  </div>`;
+
+  // Draw CPL trend chart
+  requestAnimationFrame(()=>{
+    const ctx=document.getElementById('cplTrendChart')?.getContext('2d');
+    if(!ctx) return;
+    if(analyticsCharts.trend) analyticsCharts.trend.destroy();
+    analyticsCharts.trend=new Chart(ctx,{
+      type:'line',
+      data:{
+        labels,
+        datasets:[
+          {label:'CPL (€)',data:cplData,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.1)',tension:.4,fill:true,pointRadius:3,yAxisID:'y'},
+          {label:'Leads',data:leadsData,borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.08)',tension:.4,fill:false,pointRadius:3,yAxisID:'y2'},
+        ]
+      },
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},scales:{x:{ticks:{color:'#4b5563',font:{size:10}},grid:{color:'#1a2238'}},y:{ticks:{color:'#94a3b8',callback:v=>'€'+v},grid:{color:'#1a2238'},title:{display:true,text:'CPL €',color:'#94a3b8'}},y2:{position:'right',ticks:{color:'#10b981'},grid:{drawOnChartArea:false},title:{display:true,text:'Leads',color:'#10b981'}}}}
+    });
+  });
+}
+
+// ── VEILLE CONCURRENTS ─────────────────────────────────────────────────────────
+function renderVeille(){
+  const el=document.getElementById('tc-veille');
+  el.innerHTML=`
+  <div style="padding:8px 0 20px">
+    <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">🔍 Veille Concurrents — Facebook Ad Library</div>
+    <div style="font-size:12px;color:#4b5563;margin-bottom:20px">Cherche les pubs actives de tes concurrents pour t'inspirer et adapter tes scripts</div>
+
+    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+      <input id="veilleQ" placeholder="Ex: coaching business, masterclass, formation..." style="flex:1;min-width:220px;padding:10px 14px;background:#111827;border:1px solid #1f2d47;border-radius:8px;color:#e2e8f0;font-size:13px" onkeydown="if(event.key==='Enter')searchVeille()">
+      <select id="veilleCountry" style="padding:10px 14px;background:#111827;border:1px solid #1f2d47;border-radius:8px;color:#e2e8f0;font-size:13px">
+        <option value="FR">🇫🇷 France</option>
+        <option value="BE">🇧🇪 Belgique</option>
+        <option value="CH">🇨🇭 Suisse</option>
+        <option value="MA">🇲🇦 Maroc</option>
+      </select>
+      <button onclick="searchVeille()" style="padding:10px 20px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">🔍 Rechercher</button>
+    </div>
+
+    <!-- Suggestions rapides -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+      ${['coaching business','masterclass gratuite','formation en ligne','entrepreneur','business en ligne','liberté financière'].map(kw=>`<button onclick="document.getElementById('veilleQ').value='${kw}';searchVeille()" style="padding:5px 12px;background:#111827;border:1px solid #1f2d47;border-radius:20px;color:#94a3b8;font-size:11px;cursor:pointer">${kw}</button>`).join('')}
+    </div>
+
+    <!-- Tips -->
+    <div style="background:#0a1020;border:1px solid #1a2238;border-radius:10px;padding:14px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:8px">💡 Comment utiliser la veille pour améliorer tes scripts</div>
+      <div style="font-size:12px;color:#94a3b8;line-height:1.6">
+        1. <strong style="color:#e2e8f0">Cherche tes concurrents</strong> directs (même niche, même prix)<br>
+        2. <strong style="color:#e2e8f0">Note les hooks</strong> qui captent l'attention (première phrase)<br>
+        3. <strong style="color:#e2e8f0">Analyse la structure</strong> : Problème → Agitation → Solution → CTA<br>
+        4. <strong style="color:#e2e8f0">Inspire-toi du meilleur</strong> — adapte à ta propre offre et voix<br>
+        5. <strong style="color:#e2e8f0">Évite de copier</strong> — différencie-toi pour mieux convertir
+      </div>
+    </div>
+
+    <div id="veilleResults"></div>
+  </div>`;
+}
+
+async function searchVeille(){
+  const q=document.getElementById('veilleQ')?.value?.trim();
+  const country=document.getElementById('veilleCountry')?.value||'FR';
+  if(!q) return;
+  const el=document.getElementById('veilleResults');
+  el.innerHTML=`<div style="text-align:center;padding:30px"><div class="spin" style="margin:0 auto 12px"></div><div style="color:#4b5563">Recherche dans l'Ad Library...</div></div>`;
+  try{
+    const r=await fetch('/api/competitor-ads?q='+encodeURIComponent(q)+'&country='+country);
+    const data=await r.json();
+    if(data.error){ el.innerHTML=`<div style="color:#ef4444;padding:16px">${data.error}</div>`; return; }
+    const ads=data.ads||[];
+    if(!ads.length){ el.innerHTML=`<div style="padding:30px;text-align:center;color:#4b5563">Aucune pub trouvée pour "${q}" en ${country}.<br><span style="font-size:11px">Essaie d'autres mots-clés ou change de pays.</span></div>`; return; }
+    el.innerHTML=`
+      <div style="font-size:12px;color:#4b5563;margin-bottom:12px">${ads.length} pub(s) trouvée(s) pour "<strong style="color:#e2e8f0">${q}</strong>" · ${country}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+        ${ads.map(ad=>{
+          const body=(ad.ad_creative_bodies||[])[0]||'';
+          const title=(ad.ad_creative_link_titles||[])[0]||'';
+          const caption=(ad.ad_creative_link_captions||[])[0]||'';
+          const page=ad.page_name||'Page inconnue';
+          const date=ad.ad_delivery_start_time?new Date(ad.ad_delivery_start_time).toLocaleDateString('fr-FR'):'';
+          const hook=body.substring(0,80)+(body.length>80?'...':'');
+          return `<div style="background:#0d1122;border:1px solid #1a2238;border-radius:10px;padding:14px">
+            <div style="font-size:11px;color:#6366f1;font-weight:700;margin-bottom:6px">${page}</div>
+            ${title?`<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px">${title}</div>`:''}
+            ${body?`<div style="font-size:12px;color:#94a3b8;line-height:1.5;margin-bottom:8px">${body.substring(0,200)}${body.length>200?'...':''}</div>`:''}
+            ${caption?`<div style="font-size:11px;color:#4b5563;margin-bottom:6px">${caption}</div>`:''}
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+              <span style="font-size:10px;color:#4b5563">${date?'📅 '+date:''}</span>
+              ${ad.ad_snapshot_url?`<a href="${ad.ad_snapshot_url}" target="_blank" style="font-size:11px;color:#6366f1;text-decoration:none">Voir la pub →</a>`:''}
+            </div>
+            ${hook?`<div style="margin-top:8px;padding:8px;background:#0a1020;border-left:3px solid #6366f1;border-radius:4px;font-size:11px;color:#94a3b8"><strong style="color:#6366f1">Hook:</strong> ${hook}</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>`;
+  }catch(e){ el.innerHTML=`<div style="color:#ef4444;padding:16px">Erreur: ${e.message}</div>`; }
 }
 
 // ── BUDGET UPDATE ──────────────────────────────────────────────────────────────

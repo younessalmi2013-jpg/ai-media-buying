@@ -964,8 +964,9 @@ function renderAnalytics(trend,heat,period){
   const maxLeads=Math.max(...heat.map(h=>h.leads),1);
   const maxSpend=Math.max(...heat.map(h=>h.spend),1);
 
-  // Creative ranking from D
-  const adsRank=(D?.optimization?.adActions||[]).slice(0,8);
+  // Creative ranking from D — use adActions + adSetActions
+  const adsRank=(D?.optimization?.adActions||[]).filter(a=>a.spend>0||a.leads>0).slice(0,10);
+  const setsRank=(D?.optimization?.adSetActions||[]).filter(a=>a.spend>0||a.leads>0).slice(0,10);
 
   el.innerHTML=`
   <div style="padding:8px 0 20px">
@@ -1021,10 +1022,27 @@ function renderAnalytics(trend,heat,period){
       </div>`:''}
     </div>
 
+    <!-- AdSet Ranking -->
+    <div class="ccrd" style="margin-bottom:20px">
+      <div class="thead-row"><div class="ttitle">📊 Classement Ad Sets</div><div style="font-size:11px;color:#4b5563">Classés par performance semaine</div></div>
+      ${setsRank.length>0?`<table><thead><tr><th>#</th><th>Ad Set</th><th>Action</th><th>Leads</th><th>CPL</th><th>Dépense</th><th>CTR</th><th>Reach</th></tr></thead><tbody>
+      ${setsRank.map((a,i)=>`<tr>
+        <td style="font-weight:700;color:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#cd7f32':'#4b5563'}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${a.name||a.id}</td>
+        <td><span style="background:${a.color}22;color:${a.color};border:1px solid ${a.color}44;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">${a.action}</span></td>
+        <td style="font-weight:600">${a.leads}</td>
+        <td style="color:${a.cpl&&a.cpl<=(CFG?.targetCPL||8)?'#10b981':'#ef4444'}">${a.cpl?'€'+f2(a.cpl):'—'}</td>
+        <td>€${f2(a.spend)}</td>
+        <td>${a.ctr?f2(a.ctr)+'%':'—'}</td>
+        <td>${a.reach?a.reach.toLocaleString():'—'}</td>
+      </tr>`).join('')}
+      </tbody></table>`:`<div style="padding:20px;text-align:center;color:#4b5563;font-size:13px">Aucun ad set avec données — Lancez des campagnes pour voir le classement</div>`}
+    </div>
+
     <!-- Creative Ranking -->
-    ${adsRank.length>0?`<div class="ccrd">
-      <div class="thead-row"><div class="ttitle">🏆 Classement Créatives — Semaine</div><div style="font-size:11px;color:#4b5563">Classées par score IA (CPL + leads + CTR)</div></div>
-      <table><thead><tr><th>#</th><th>Créative</th><th>Badge</th><th>Leads</th><th>CPL</th><th>Dépense</th><th>CTR</th><th>Action</th></tr></thead><tbody>
+    <div class="ccrd">
+      <div class="thead-row"><div class="ttitle">🏆 Classement Créatives (Ads)</div><div style="font-size:11px;color:#4b5563">Classées par score IA (CPL + leads + CTR)</div></div>
+      ${adsRank.length>0?`<table><thead><tr><th>#</th><th>Créative</th><th>Badge</th><th>Leads</th><th>CPL</th><th>Dépense</th><th>CTR</th><th>Action</th></tr></thead><tbody>
       ${adsRank.map((a,i)=>`<tr>
         <td style="font-weight:700;color:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#cd7f32':'#4b5563'}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</td>
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${a.name||a.id}</td>
@@ -1035,8 +1053,8 @@ function renderAnalytics(trend,heat,period){
         <td>${a.ctr?f2(a.ctr)+'%':'—'}</td>
         <td>${a.badge==='PAUSE'?`<button onclick="actAd('${a.id}','PAUSED')" style="background:#ef444422;color:#ef4444;border:1px solid #ef444444;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer">⏸ Pause</button>`:a.badge==='TOP'||a.badge==='BOOST'?`<span style="color:#10b981;font-size:11px">✅ Garder</span>`:`<span style="color:#94a3b8;font-size:11px">👁 Surveiller</span>`}</td>
       </tr>`).join('')}
-      </tbody></table>
-    </div>`:''}
+      </tbody></table>`:`<div style="padding:20px;text-align:center;color:#4b5563;font-size:13px">Aucune créative avec données — Vérifiez que les ads sont actives et ont eu des dépenses</div>`}
+    </div>
   </div>`;
 
   // Draw CPL trend chart
@@ -1058,43 +1076,97 @@ function renderAnalytics(trend,heat,period){
   });
 }
 
-// ── VEILLE CONCURRENTS ─────────────────────────────────────────────────────────
+// ── VEILLE CONCURRENTS — MULTI-PLATEFORME ──────────────────────────────────────
+const PLATFORMS=[
+  {id:'meta',label:'Meta',icon:'📘',color:'#1877f2',desc:'Facebook & Instagram Ad Library'},
+  {id:'tiktok',label:'TikTok',icon:'🎵',color:'#ff0050',desc:'TikTok Creative Center'},
+  {id:'google',label:'Google',icon:'🔍',color:'#4285f4',desc:'Google Ads Transparency'},
+  {id:'youtube',label:'YouTube',icon:'▶️',color:'#ff0000',desc:'YouTube Ads Transparency'},
+  {id:'snapchat',label:'Snapchat',icon:'👻',color:'#fffc00',desc:'Snap Ad Library'}
+];
+
 function renderVeille(){
   const el=document.getElementById('tc-veille');
   el.innerHTML=`
   <div style="padding:8px 0 20px">
-    <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">🔍 Veille Concurrents — Facebook Ad Library</div>
-    <div style="font-size:12px;color:#4b5563;margin-bottom:20px">Cherche les pubs actives de tes concurrents pour t'inspirer et adapter tes scripts</div>
+    <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">🔍 Veille Concurrents — 5 Plateformes</div>
+    <div style="font-size:12px;color:#4b5563;margin-bottom:16px">Analyse les pubs de tes concurrents sur Meta, TikTok, Google, YouTube et Snapchat</div>
 
-    <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+    <!-- Barre de recherche -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
       <input id="veilleQ" placeholder="Ex: coaching business, masterclass, formation..." style="flex:1;min-width:220px;padding:10px 14px;background:#111827;border:1px solid #1f2d47;border-radius:8px;color:#e2e8f0;font-size:13px" onkeydown="if(event.key==='Enter')searchVeille()">
       <select id="veilleCountry" style="padding:10px 14px;background:#111827;border:1px solid #1f2d47;border-radius:8px;color:#e2e8f0;font-size:13px">
         <option value="FR">🇫🇷 France</option>
         <option value="BE">🇧🇪 Belgique</option>
         <option value="CH">🇨🇭 Suisse</option>
         <option value="MA">🇲🇦 Maroc</option>
+        <option value="US">🇺🇸 USA</option>
+        <option value="GB">🇬🇧 UK</option>
+        <option value="DE">🇩🇪 Allemagne</option>
+        <option value="ES">🇪🇸 Espagne</option>
       </select>
-      <button onclick="searchVeille()" style="padding:10px 20px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">🔍 Rechercher</button>
+      <button onclick="searchVeille()" style="padding:10px 20px;background:#6366f1;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer">🔍 Rechercher tout</button>
     </div>
 
-    <!-- Suggestions rapides -->
+    <!-- Suggestions -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      ${['coaching business','masterclass gratuite','formation en ligne','dropshipping','trading crypto','business en ligne'].map(kw=>`<button onclick="document.getElementById('veilleQ').value='${kw}';searchVeille()" style="padding:5px 12px;background:#111827;border:1px solid #1f2d47;border-radius:20px;color:#94a3b8;font-size:11px;cursor:pointer">${kw}</button>`).join('')}
+    </div>
+
+    <!-- Platform pills -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
-      ${['coaching business','masterclass gratuite','formation en ligne','entrepreneur','business en ligne','liberté financière'].map(kw=>`<button onclick="document.getElementById('veilleQ').value='${kw}';searchVeille()" style="padding:5px 12px;background:#111827;border:1px solid #1f2d47;border-radius:20px;color:#94a3b8;font-size:11px;cursor:pointer">${kw}</button>`).join('')}
-    </div>
-
-    <!-- Tips -->
-    <div style="background:#0a1020;border:1px solid #1a2238;border-radius:10px;padding:14px;margin-bottom:20px">
-      <div style="font-size:12px;font-weight:700;color:#6366f1;margin-bottom:8px">💡 Comment utiliser la veille pour améliorer tes scripts</div>
-      <div style="font-size:12px;color:#94a3b8;line-height:1.6">
-        1. <strong style="color:#e2e8f0">Cherche tes concurrents</strong> directs (même niche, même prix)<br>
-        2. <strong style="color:#e2e8f0">Note les hooks</strong> qui captent l'attention (première phrase)<br>
-        3. <strong style="color:#e2e8f0">Analyse la structure</strong> : Problème → Agitation → Solution → CTA<br>
-        4. <strong style="color:#e2e8f0">Inspire-toi du meilleur</strong> — adapte à ta propre offre et voix<br>
-        5. <strong style="color:#e2e8f0">Évite de copier</strong> — différencie-toi pour mieux convertir
-      </div>
+      ${PLATFORMS.map(p=>`<div style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:#0d1122;border:1px solid ${p.color}33;border-radius:20px">
+        <span>${p.icon}</span>
+        <span style="font-size:12px;font-weight:600;color:${p.color}">${p.label}</span>
+        <span style="font-size:10px;color:#4b5563">${p.desc}</span>
+      </div>`).join('')}
     </div>
 
     <div id="veilleResults"></div>
+  </div>`;
+}
+
+function renderPlatformSection(p, data){
+  const hasAds = data.ads && data.ads.length > 0;
+  const hasFallback = !!data.fallback;
+  return `<div style="background:#0d1122;border:1px solid ${p.color}33;border-radius:12px;overflow:hidden;margin-bottom:16px">
+    <div style="background:${p.color}11;border-bottom:1px solid ${p.color}33;padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px">${p.icon}</span>
+        <div>
+          <div style="font-size:14px;font-weight:700;color:${p.color}">${p.label}</div>
+          <div style="font-size:11px;color:#4b5563">${p.desc}</div>
+        </div>
+        ${hasAds?`<span style="margin-left:8px;background:${p.color}22;color:${p.color};border:1px solid ${p.color}44;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${data.ads.length} pubs</span>`:''}
+      </div>
+      ${hasFallback?`<a href="${data.fallback}" target="_blank" style="padding:7px 14px;background:${p.color};border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none">Ouvrir ${p.label} →</a>`:''}
+    </div>
+    <div style="padding:14px">
+      ${data.error&&!hasAds?`<div style="padding:10px;background:#1a0a0a;border:1px solid #ef444433;border-radius:8px;font-size:12px;color:#ef4444;margin-bottom:10px">⚠️ API: ${data.error}${hasFallback?' — Clique le bouton pour rechercher directement':''}</div>`:''}
+      ${!hasAds&&hasFallback?`<div style="text-align:center;padding:20px">
+        <div style="font-size:13px;color:#4b5563;margin-bottom:12px">Recherche les pubs concurrentes directement sur ${p.label}</div>
+        <a href="${data.fallback}" target="_blank" style="display:inline-block;padding:10px 24px;background:${p.color};border-radius:8px;color:#fff;font-size:13px;font-weight:700;text-decoration:none">${p.icon} Ouvrir ${p.label} Ad Library</a>
+        ${data.note?`<div style="margin-top:8px;font-size:11px;color:#4b5563">${data.note}</div>`:''}
+      </div>`:''}
+      ${hasAds?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px">
+        ${data.ads.slice(0,12).map(ad=>{
+          const body=ad.body||'';
+          const title=ad.title||'';
+          const page=ad.page||'Annonceur';
+          const date=ad.date?new Date(ad.date).toLocaleDateString('fr-FR'):'';
+          return `<div style="background:#060d1a;border:1px solid #1a2238;border-radius:8px;padding:12px">
+            <div style="font-size:11px;font-weight:700;margin-bottom:6px" style="color:${p.color}">${page}</div>
+            ${title?`<div style="font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:6px">${title.substring(0,80)}</div>`:''}
+            ${body?`<div style="font-size:11px;color:#94a3b8;line-height:1.5;margin-bottom:8px">${body.substring(0,180)}${body.length>180?'...':''}</div>`:''}
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:10px;color:#4b5563">${date?'📅 '+date:''}</span>
+              ${ad.url?`<a href="${ad.url}" target="_blank" style="font-size:11px;color:${p.color};text-decoration:none">Voir →</a>`:''}
+            </div>
+            ${body?`<div style="margin-top:8px;padding:6px 8px;background:#0a1020;border-left:2px solid ${p.color};border-radius:0 4px 4px 0;font-size:10px;color:#94a3b8"><strong style="color:${p.color}">Hook:</strong> ${body.substring(0,70)}${body.length>70?'...':''}</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>`:''}
+    </div>
   </div>`;
 }
 
@@ -1103,37 +1175,16 @@ async function searchVeille(){
   const country=document.getElementById('veilleCountry')?.value||'FR';
   if(!q) return;
   const el=document.getElementById('veilleResults');
-  el.innerHTML=`<div style="text-align:center;padding:30px"><div class="spin" style="margin:0 auto 12px"></div><div style="color:#4b5563">Recherche dans l'Ad Library...</div></div>`;
+  el.innerHTML=`<div style="text-align:center;padding:40px"><div class="spin" style="margin:0 auto 16px;width:40px;height:40px"></div><div style="color:#4b5563;font-size:13px">Recherche sur 5 plateformes simultanément...</div><div style="margin-top:8px;font-size:11px;color:#374151">Meta · TikTok · Google · YouTube · Snapchat</div></div>`;
   try{
-    const r=await fetch('/api/competitor-ads?q='+encodeURIComponent(q)+'&country='+country);
+    const r=await fetch('/api/competitor-ads-all?q='+encodeURIComponent(q)+'&country='+country);
     const data=await r.json();
-    if(data.error){ el.innerHTML=`<div style="color:#ef4444;padding:16px">${data.error}</div>`; return; }
-    const ads=data.ads||[];
-    if(!ads.length){ el.innerHTML=`<div style="padding:30px;text-align:center;color:#4b5563">Aucune pub trouvée pour "${q}" en ${country}.<br><span style="font-size:11px">Essaie d'autres mots-clés ou change de pays.</span></div>`; return; }
+    if(data.error){ el.innerHTML=`<div style="color:#ef4444;padding:16px">Erreur: ${data.error}</div>`; return; }
+    const totalAds=PLATFORMS.reduce((s,p)=>s+(data[p.id]?.ads?.length||0),0);
     el.innerHTML=`
-      <div style="font-size:12px;color:#4b5563;margin-bottom:12px">${ads.length} pub(s) trouvée(s) pour "<strong style="color:#e2e8f0">${q}</strong>" · ${country}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
-        ${ads.map(ad=>{
-          const body=(ad.ad_creative_bodies||[])[0]||'';
-          const title=(ad.ad_creative_link_titles||[])[0]||'';
-          const caption=(ad.ad_creative_link_captions||[])[0]||'';
-          const page=ad.page_name||'Page inconnue';
-          const date=ad.ad_delivery_start_time?new Date(ad.ad_delivery_start_time).toLocaleDateString('fr-FR'):'';
-          const hook=body.substring(0,80)+(body.length>80?'...':'');
-          return `<div style="background:#0d1122;border:1px solid #1a2238;border-radius:10px;padding:14px">
-            <div style="font-size:11px;color:#6366f1;font-weight:700;margin-bottom:6px">${page}</div>
-            ${title?`<div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:6px">${title}</div>`:''}
-            ${body?`<div style="font-size:12px;color:#94a3b8;line-height:1.5;margin-bottom:8px">${body.substring(0,200)}${body.length>200?'...':''}</div>`:''}
-            ${caption?`<div style="font-size:11px;color:#4b5563;margin-bottom:6px">${caption}</div>`:''}
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
-              <span style="font-size:10px;color:#4b5563">${date?'📅 '+date:''}</span>
-              ${ad.ad_snapshot_url?`<a href="${ad.ad_snapshot_url}" target="_blank" style="font-size:11px;color:#6366f1;text-decoration:none">Voir la pub →</a>`:''}
-            </div>
-            ${hook?`<div style="margin-top:8px;padding:8px;background:#0a1020;border-left:3px solid #6366f1;border-radius:4px;font-size:11px;color:#94a3b8"><strong style="color:#6366f1">Hook:</strong> ${hook}</div>`:''}
-          </div>`;
-        }).join('')}
-      </div>`;
-  }catch(e){ el.innerHTML=`<div style="color:#ef4444;padding:16px">Erreur: ${e.message}</div>`; }
+      <div style="font-size:12px;color:#4b5563;margin-bottom:16px">${totalAds} pub(s) API trouvée(s) + liens directs vers bibliothèques publiques pour "<strong style="color:#e2e8f0">${q}</strong>" · ${country}</div>
+      ${PLATFORMS.map(p=>renderPlatformSection(p,data[p.id]||{ads:[]})).join('')}`;
+  }catch(e){ el.innerHTML=`<div style="color:#ef4444;padding:16px">Erreur réseau: ${e.message}</div>`; }
 }
 
 // ── BUDGET UPDATE ──────────────────────────────────────────────────────────────

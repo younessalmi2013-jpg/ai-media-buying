@@ -1062,11 +1062,12 @@ function renderAnalytics(trend,heat,period){
 
     <!-- Creative Ranking -->
     <div class="ccrd">
-      <div class="thead-row"><div class="ttitle">🏆 Classement Créatives (Ads)</div><div style="font-size:11px;color:#4b5563">Classées par score IA (CPL + leads + CTR)</div></div>
+      <div class="thead-row"><div class="ttitle">🏆 Classement Créatives (Ads)</div><div style="font-size:11px;color:#4b5563">Classées par score IA — cliquer sur le nom pour voir la créative</div></div>
+      ${(()=>{ window._adsPreviewData={}; adsRank.forEach(a=>{ if(a.id) window._adsPreviewData[a.id]=a; }); return ''; })()}
       ${adsRank.length>0?`<table><thead><tr><th>#</th><th>Créative</th><th>Badge</th><th>Leads</th><th>CPL</th><th>Dépense</th><th>CTR</th><th>Action</th></tr></thead><tbody>
       ${adsRank.map((a,i)=>`<tr>
         <td style="font-weight:700;color:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#cd7f32':'#4b5563'}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</td>
-        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${a.name||a.id}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${a.id?`<span onclick="showAdPreviewById('${a.id}')" style="cursor:pointer;color:#60a5fa;text-decoration:underline;text-underline-offset:2px" title="👁 Voir preview">${a.name||a.id}</span>`:a.name||a.id}</td>
         <td><span style="background:${a.color}22;color:${a.color};border:1px solid ${a.color}44;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">${a.badge}</span></td>
         <td style="font-weight:600">${a.leads}</td>
         <td style="color:${a.cpl&&a.cpl<=(CFG?.targetCPL||8)?'#10b981':'#ef4444'}">${a.cpl?'€'+f2(a.cpl):'—'}</td>
@@ -1226,6 +1227,64 @@ async function updBudget(amount){
     if(d.success){ toast(d.message); setTimeout(load,2000); }
     else toast('Erreur: '+(d.error||'?'),true);
   }catch(e){ toast('Erreur réseau',true); }
+}
+
+// ── AD PREVIEW MODAL ──────────────────────────────────────────────────────────
+window._adsPreviewData = {};
+(function createAdPreviewModal(){
+  const overlay = document.createElement('div');
+  overlay.id = 'adPreviewModal';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:#00000099;z-index:9999;align-items:center;justify-content:center';
+  overlay.onclick = e => { if(e.target===overlay) closeAdPreview(); };
+  overlay.innerHTML = `
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:24px;width:380px;max-width:95vw;max-height:90vh;overflow-y:auto;position:relative;box-shadow:0 25px 50px #000a">
+      <button onclick="closeAdPreview()" style="position:absolute;top:12px;right:12px;background:#1e293b;border:none;color:#94a3b8;font-size:16px;cursor:pointer;width:28px;height:28px;border-radius:6px;line-height:1">✕</button>
+      <div id="adPreviewContent"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+})();
+
+function showAdPreviewById(adId){
+  const a = window._adsPreviewData[adId];
+  if(!a) return;
+  const modal = document.getElementById('adPreviewModal');
+  const content = document.getElementById('adPreviewContent');
+  modal.style.display = 'flex';
+  const tCPL = CFG?.targetCPL||8;
+  content.innerHTML = `
+    <h3 style="color:#e2e8f0;margin:0 0 4px;font-size:13px;padding-right:24px;font-weight:700">${a.name||a.id}</h3>
+    <div style="color:#334155;font-size:10px;margin-bottom:14px;word-break:break-all">${a.id}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+      <span style="background:${a.color}22;color:${a.color};border:1px solid ${a.color}44;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700">${a.badge}</span>
+      <span style="background:#1e293b;color:#94a3b8;padding:3px 10px;border-radius:8px;font-size:11px">🎯 ${a.leads||0} leads</span>
+      <span style="background:#1e293b;color:${(a.cpl&&a.cpl<=tCPL)?'#10b981':'#ef4444'};padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600">CPL €${a.cpl?Number(a.cpl).toFixed(2):'—'}</span>
+      <span style="background:#1e293b;color:#94a3b8;padding:3px 10px;border-radius:8px;font-size:11px">💸 €${Number(a.spend||0).toFixed(2)}</span>
+      ${a.ctr?`<span style="background:#1e293b;color:#94a3b8;padding:3px 10px;border-radius:8px;font-size:11px">CTR ${Number(a.ctr).toFixed(2)}%</span>`:''}
+      <span style="background:#1e293b;color:#f59e0b;padding:3px 10px;border-radius:8px;font-size:11px">Score ${a.score||0}/100</span>
+    </div>
+    <div style="border-top:1px solid #1e293b;padding-top:14px">
+      <div style="color:#4b5563;font-size:11px;margin-bottom:10px">📱 Preview créative Meta :</div>
+      <div id="adPreviewIframe" style="text-align:center;min-height:180px;display:flex;align-items:center;justify-content:center">
+        <div style="color:#4b5563;font-size:13px">⏳ Chargement...</div>
+      </div>
+    </div>`;
+  fetch('/api/ad-preview/'+adId).then(r=>r.json()).then(data=>{
+    const div = document.getElementById('adPreviewIframe');
+    if(!div) return;
+    if(data.success && data.iframe){
+      div.style.display = 'block';
+      div.innerHTML = data.iframe;
+      const iframe = div.querySelector('iframe');
+      if(iframe){ iframe.style.cssText='max-width:100%;border:none;border-radius:8px;display:block;margin:0 auto'; }
+    } else {
+      div.innerHTML = `<div style="text-align:center"><div style="color:#f59e0b;font-size:13px;margin-bottom:8px">⚠️ Preview indisponible</div><div style="color:#4b5563;font-size:11px">${data.error||'Ad en statut Learning ou draft'}</div></div>`;
+    }
+  }).catch(e=>{ const div=document.getElementById('adPreviewIframe'); if(div) div.innerHTML=`<div style="color:#ef4444;font-size:12px">Erreur: ${e.message}</div>`; });
+}
+
+function closeAdPreview(){
+  const m = document.getElementById('adPreviewModal');
+  if(m) m.style.display = 'none';
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────────

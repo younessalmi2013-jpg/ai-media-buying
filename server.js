@@ -522,6 +522,27 @@ const server = http.createServer(async (req, res) => {
     } catch(e) { return json(res, { error: e.message }, 500); }
   }
 
+  // ── AD PREVIEW ──
+  if (pathname.startsWith('/api/ad-preview/') && req.method === 'GET') {
+    try {
+      const adId = pathname.split('/api/ad-preview/')[1]?.split('?')[0];
+      if (!adId) return json(res, { error: 'missing ad_id' }, 400);
+      const previewUrl = `https://${API_BASE}/${API_VERSION}/${adId}/previews?ad_format=MOBILE_FEED_STANDARD&access_token=${ACCESS_TOKEN}`;
+      const data = await new Promise((resolve, reject) => {
+        https.get(previewUrl, r => {
+          let body = '';
+          r.on('data', d => body += d);
+          r.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
+        }).on('error', reject);
+      });
+      if (data.data && data.data[0]) {
+        return json(res, { success: true, iframe: data.data[0].body });
+      } else {
+        return json(res, { success: false, error: data.error?.message || 'No preview available' });
+      }
+    } catch(e) { return json(res, { error: e.message }, 500); }
+  }
+
   // ── STATIC FILES ──
   if (pathname === '/' || pathname === '/index.html') {
     return serveStatic(res, path.join(PUBLIC_DIR, 'index.html'));

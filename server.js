@@ -132,6 +132,44 @@ async function getInstagramData() {
   return { connected: true, facebook: { id: page.id, name: page.name, fans: page.fan_count }, instagram: ig, recentMedia: media };
 }
 
+// ─── CPL TREND (day by day) ───────────────────────────────────────────────────
+async function getCplTrend(period) {
+  const preset = period === '7' ? 'last_7d' : period === '14' ? 'last_14d' : 'last_30d';
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'spend,actions,date_start,date_stop', date_preset: preset, time_increment: 1, level: 'account' });
+  const r = await apiGet(`/${API_VERSION}/${AD_ACCOUNT_ID}/insights?${p}`);
+  return (r?.data || []).map(d => {
+    const leads = getLeads(d.actions);
+    const spend = parseFloat(d.spend || 0);
+    return { date: d.date_start, spend, leads, cpl: leads > 0 ? parseFloat((spend/leads).toFixed(2)) : 0 };
+  });
+}
+
+// ─── HOURLY HEATMAP ───────────────────────────────────────────────────────────
+async function getHourlyHeatmap() {
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'spend,actions,impressions', date_preset: 'last_30d', breakdowns: 'hourly_stats_aggregated_by_advertiser_time_zone', level: 'account' });
+  const r = await apiGet(`/${API_VERSION}/${AD_ACCOUNT_ID}/insights?${p}`);
+  const hours = Array.from({length:24}, (_,i) => ({ hour:i, label:i+'h', spend:0, leads:0, impressions:0, cpl:0 }));
+  (r?.data||[]).forEach(d => {
+    const hStr = (d.hourly_stats_aggregated_by_advertiser_time_zone||'0:00 - 1:00');
+    const h = parseInt(hStr.split(':')[0]);
+    if (h >= 0 && h < 24) {
+      hours[h].spend += parseFloat(d.spend||0);
+      hours[h].leads += getLeads(d.actions);
+      hours[h].impressions += parseInt(d.impressions||0);
+    }
+  });
+  hours.forEach(h => { h.cpl = h.leads > 0 ? parseFloat((h.spend/h.leads).toFixed(2)) : 0; h.spend=parseFloat(h.spend.toFixed(2)); });
+  return hours;
+}
+
+// ─── COMPETITOR ADS (Ad Library) ─────────────────────────────────────────────
+async function getCompetitorAds(q, country) {
+  const cc = (country||'FR').toUpperCase();
+  const p = buildParams({ access_token: ACCESS_TOKEN, search_terms: q, ad_type: 'ALL', ad_reached_countries: JSON.stringify([cc]), fields: 'id,ad_creative_bodies,ad_creative_link_titles,ad_creative_link_captions,page_name,ad_delivery_start_time,ad_snapshot_url', limit: 12 });
+  const r = await apiGet(`/${API_VERSION}/ads_archive?${p}`);
+  return { ads: r?.data||[], q, country: cc };
+}
+
 // ─── AI ENGINE ────────────────────────────────────────────────────────────────
 function processAdSets(arr) {
   return arr.map(a => ({ id: a.adset_id||a.ad_id, name: a.adset_name||a.ad_name, adsetName: a.adset_name,
@@ -385,6 +423,24 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/instagram' && req.method === 'GET') {
     return json(res, await getInstagramData());
+  }
+
+  if (pathname === '/api/cpl-trend' && req.method === 'GET') {
+    try { return json(res, await getCplTrend(parsed.query.period||'30')); }
+    catch(e) { return json(res, { error: e.message }, 500); }
+  }
+
+  if (pathname === '/api/hourly-heatmap' && req.method === 'GET') {
+    try { return json(res, await getHourlyHeatmap()); }
+    catch(e) { return json(res, { error: e.message }, 500); }
+  }
+
+  if (pathname === '/api/competitor-ads' && req.method === 'GET') {
+    try {
+      const kw = parsed.query.q||'';
+      if (!kw) return json(res, { ads:[], q:'', country:'FR' });
+      return json(res, await getCompetitorAds(kw, parsed.query.country||'FR'));
+    } catch(e) { return json(res, { error: e.message }, 500); }
   }
 
   // ── STATIC FILES ──

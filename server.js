@@ -175,7 +175,8 @@ async function getMetaAds(q, country) {
       caption: (ad.ad_creative_link_captions||[])[0]||'',
       date: ad.ad_delivery_start_time||'', url: ad.ad_snapshot_url||''
     }));
-    return { platform:'meta', ads, q, country:cc, error:null };
+    return { platform:'meta', ads, q, country:cc, error:null,
+      fallback:`https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${cc}&q=${encodeURIComponent(q)}&search_type=keyword_unordered` };
   } catch(e) {
     return { platform:'meta', ads:[], q, country:cc, error:e.message,
       fallback:`https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${cc}&q=${encodeURIComponent(q)}&search_type=keyword_unordered` };
@@ -194,7 +195,8 @@ async function getTikTokAds(q, country) {
       title: ad.ad_title||ad.video_info?.desc||'', body: ad.video_info?.desc||ad.ad_title||'',
       thumb: ad.video_info?.cover||'', url: `https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?keyword=${encodeURIComponent(q)}`
     }));
-    return { platform:'tiktok', ads, q, country:cc, error:null };
+    return { platform:'tiktok', ads, q, country:cc, error:null,
+      fallback:`https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?keyword=${encodeURIComponent(q)}` };
   } catch(e) {
     return { platform:'tiktok', ads:[], q, country:cc, error:e.message,
       fallback:`https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?keyword=${encodeURIComponent(q)}` };
@@ -241,7 +243,7 @@ async function getCompetitorAds(q, country) { return getMetaAds(q, country); }
 
 // ─── AI ENGINE ────────────────────────────────────────────────────────────────
 function processAdSets(arr) {
-  return arr.map(a => ({ id: a.adset_id||a.ad_id, name: a.adset_name||a.ad_name, adsetName: a.adset_name,
+  return arr.map(a => ({ id: a.ad_id||a.adset_id, name: a.ad_id ? (a.ad_name||a.adset_name) : (a.adset_name||a.ad_name), adsetName: a.adset_name,
     spend: parseFloat(a.spend||0), leads: getLeads(a.actions), cpl: getLeads(a.actions)>0 ? parseFloat(a.spend)/getLeads(a.actions) : null,
     impressions: parseInt(a.impressions||0), clicks: parseInt(a.clicks||0), ctr: parseFloat(a.ctr||0),
     cpc: parseFloat(a.cpc||0), reach: parseInt(a.reach||0), lpv: getLPV(a.actions) }));

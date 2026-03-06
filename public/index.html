@@ -216,16 +216,34 @@
     .cm-text{font-size:12px;color:#94a3b8;line-height:1.5}
     .cm-date{font-size:10px;color:#374151;margin-top:3px}
 
-    /* PRINT */
+    /* PRINT / PDF */
     @media print{
-      .hdr-r .dfbtn,.hdr-r .rbtn,#datepicker,.tabs .tab,.bbtns,.sact,.toast{display:none!important}
-      .wrap{padding:0;max-width:100%}
-      .tc{display:block!important}
-      .kcard,.gcard,.tcard,.ccrd,.recs,.scard{break-inside:avoid;page-break-inside:avoid}
-      body{background:#fff;color:#000}
-      .kcard,.gcard,.tcard,.ccrd,.ai-score-card,.ai-decision-box,.ai-budget-calc,.bcard{background:#f9fafb;border:1px solid #e5e7eb;color:#111}
-      .kval,.gnum,.score-num,.cdval,.ai-decision-main{color:#111!important}
-      .klbl,.ksub,.gsub,.gpct,.ctitle,.section-title,.ai-bc-lbl,.ai-bc-sub,.flbl,.retitle{color:#555!important}
+      *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .hdr-r,.tabs,.bbtns,.sact,.toast,#datepicker,button,.dfbtn,.rbtn,.cbtn,.bbtn{display:none!important}
+      .hdr{background:#1a1f35!important;border-bottom:2px solid #6366f1!important;padding:12px 20px!important;position:relative!important}
+      .hdr-title{color:#fff!important;font-size:18px!important}
+      .hdr-sub{color:#94a3b8!important}
+      .hdr-l{gap:14px!important}
+      .wrap{padding:16px!important;max-width:100%!important}
+      .tabs{display:none!important}
+      .tc{display:block!important;page-break-after:auto}
+      body{background:#07090f!important;color:#e2e8f0!important;font-size:11pt}
+      .kcard{background:#0d1122!important;border:1px solid #1a2238!important;break-inside:avoid;page-break-inside:avoid}
+      .kval{color:#fff!important;font-size:20pt!important}
+      .klbl{color:#94a3b8!important}
+      .ksub{color:#64748b!important}
+      .gcard,.tcard,.ccrd,.ai-score-card,.ai-decision-box,.ai-budget-calc,.bcard{background:#0d1122!important;border:1px solid #1a2238!important;break-inside:avoid;page-break-inside:avoid}
+      .pfill{background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899)!important}
+      .pbar{background:#1a2238!important}
+      table{font-size:9pt}
+      th{background:#080b14!important;color:#64748b!important}
+      td{border-top:1px solid #111827!important}
+      .section-title{color:#94a3b8!important;page-break-after:avoid}
+      .kgrid{page-break-inside:avoid}
+      .cgrid{page-break-inside:avoid}
+      .recs .rec{break-inside:avoid}
+      /* Print header info */
+      .hdr::after{content:"Rapport généré le " attr(data-date);font-size:10px;color:#64748b;position:absolute;right:20px;bottom:8px}
     }
   </style>
 </head>
@@ -261,7 +279,7 @@
     <div class="dot" id="dot"></div>
     <div class="ts" id="ts">Chargement...</div>
     <button class="rbtn" onclick="load()">🔄</button>
-    <button class="rbtn" onclick="window.print()" title="Exporter en PDF">📄 PDF</button>
+    <button class="rbtn" onclick="printReport()" title="Exporter rapport PDF">📄 PDF</button>
   </div>
 </div>
 
@@ -330,6 +348,13 @@ const f2 = n => n == null ? '—' : Number(n).toLocaleString('fr-FR',{minimumFra
 const fn = n => n == null ? '—' : Number(n).toLocaleString('fr-FR');
 const cplCls = c => !c ? '' : c < 6 ? 'cg' : c < 9 ? 'co' : 'cr';
 const cplBg = c => !c ? '' : c < 6 ? 'bg-good' : c < 9 ? 'bg-warn' : 'bg-bad';
+
+function printReport(){
+  // Set date on header for print
+  const hdr=document.querySelector('.hdr');
+  if(hdr) hdr.setAttribute('data-date', new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}));
+  window.print();
+}
 
 function toast(msg, err=false){
   const t=document.getElementById('toast');
@@ -593,23 +618,60 @@ function renderAdSets(D){
     <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
     <td>${fn(a.impressions)}</td><td>${f2(a.ctr)}%</td>
     <td>€${f2(a.cpc)}</td><td>${fn(a.reach)}</td>
-  </tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#4b5563;padding:30px">Aucune donnée</td></tr>';
+    <td style="color:${hookRateColor(a.hookRate)};font-weight:600">${a.hookRate!=null?a.hookRate+'%':'—'}</td>
+  </tr>`).join(''):'<tr><td colspan="9" style="text-align:center;color:#4b5563;padding:30px">Aucune donnée</td></tr>';
   document.getElementById('tc-adsets').innerHTML=`
     <div class="tcard" style="margin-bottom:20px">
-      <div class="thead-row"><div class="ttitle">📦 Ad Sets — Aujourd'hui</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>CTR</th><th>CPC</th><th>Reach</th></tr></thead><tbody>${rows(D.adSets.today)}</tbody></table></div>
+      <div class="thead-row"><div class="ttitle">📦 Ad Sets — Aujourd'hui</div><div style="font-size:11px;color:#4b5563">Hook Rate = vues 3s / impressions</div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>CTR</th><th>CPC</th><th>Reach</th><th>Hook Rate</th></tr></thead><tbody>${rows(D.adSets.today)}</tbody></table></div>
     </div>
     <div class="tcard">
       <div class="thead-row"><div class="ttitle">📆 Ad Sets — Semaine</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>CTR</th><th>CPC</th><th>Reach</th></tr></thead><tbody>${rows(D.adSets.week)}</tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>Impressions</th><th>CTR</th><th>CPC</th><th>Reach</th><th>Hook Rate</th></tr></thead><tbody>${rows(D.adSets.week)}</tbody></table></div>
     </div>`;
 }
 
 // ── ADS ────────────────────────────────────────────────────────────────────────
 function adBadgeHtml(badge,color){ return `<span style="background:${color}20;color:${color};border:1px solid ${color}40;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px">${badge}</span>`; }
+function hookRateColor(hr){ return hr==null?'#4b5563':hr>=20?'#10b981':hr>=10?'#f59e0b':'#ef4444'; }
 function renderAds(D){
   const opt=D.optimization||{};
   const adsW=opt.adActions||[];
+  // Winning ads = TOP badge with leads > 0, sorted by CPL
+  const winners=adsW.filter(a=>(a.badge==='TOP'||a.badge==='BOOST')&&a.leads>0&&a.cpl).sort((a,b)=>a.cpl-b.cpl).slice(0,3);
+  const winnerSection=winners.length?`
+    <div style="background:linear-gradient(135deg,#0a1f12,#0d1a0d);border:1px solid #10b98130;border-radius:14px;padding:20px;margin-bottom:20px">
+      <div style="font-size:15px;font-weight:700;color:#10b981;margin-bottom:14px">🏆 Ads Gagnantes — Top ${winners.length} créatives</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+        ${winners.map((a,i)=>`<div style="background:#080b14;border:1px solid ${a.color}33;border-radius:12px;padding:16px;position:relative">
+          <div style="position:absolute;top:10px;right:10px;font-size:18px">${i===0?'🥇':i===1?'🥈':'🥉'}</div>
+          <div style="font-size:11px;color:#4b5563;margin-bottom:4px">#${i+1} — ${adBadgeHtml(a.badge,a.color)}</div>
+          <div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.name}">${a.name}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div style="background:#0d1122;border-radius:8px;padding:8px;text-align:center">
+              <div style="font-size:18px;font-weight:700;color:#10b981">€${f2(a.cpl)}</div>
+              <div style="font-size:9px;color:#4b5563;text-transform:uppercase;margin-top:2px">CPL</div>
+            </div>
+            <div style="background:#0d1122;border-radius:8px;padding:8px;text-align:center">
+              <div style="font-size:18px;font-weight:700;color:#6366f1">${fn(a.leads)}</div>
+              <div style="font-size:9px;color:#4b5563;text-transform:uppercase;margin-top:2px">Leads</div>
+            </div>
+            <div style="background:#0d1122;border-radius:8px;padding:8px;text-align:center">
+              <div style="font-size:14px;font-weight:700;color:#f59e0b">${f2(a.ctr)}%</div>
+              <div style="font-size:9px;color:#4b5563;text-transform:uppercase;margin-top:2px">CTR</div>
+            </div>
+            <div style="background:#0d1122;border-radius:8px;padding:8px;text-align:center">
+              <div style="font-size:14px;font-weight:700;color:${hookRateColor(a.hookRate)}">${a.hookRate!=null?a.hookRate+'%':'—'}</div>
+              <div style="font-size:9px;color:#4b5563;text-transform:uppercase;margin-top:2px">Hook Rate</div>
+            </div>
+          </div>
+          <div style="margin-top:10px;background:#0d1122;border-radius:6px;height:4px;overflow:hidden">
+            <div style="width:${a.score}%;height:100%;background:linear-gradient(90deg,${a.color},${a.color}88);border-radius:6px"></div>
+          </div>
+          <div style="font-size:10px;color:#4b5563;margin-top:3px;text-align:right">Score ${a.score}/100</div>
+        </div>`).join('')}
+      </div>
+    </div>`:'';
   const rows=(arr,showBadge)=>arr.length?arr.map(a=>`<tr>
     <td class="tname" title="${a.name}">${a.name.substring(0,24)}…</td>
     <td class="tname" style="font-size:10px;color:#4b5563">${(a.adsetName||'—').substring(0,20)}…</td>
@@ -617,15 +679,17 @@ function renderAds(D){
     <td>€${f2(a.spend)}</td><td>${fn(a.leads)}</td>
     <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
     <td>${f2(a.ctr)}%</td><td>€${f2(a.cpc)}</td>
-  </tr>`).join(''):`<tr><td colspan="${showBadge?8:7}" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>`;
+    <td style="color:${hookRateColor(a.hookRate)};font-weight:600">${a.hookRate!=null?a.hookRate+'%':'—'}</td>
+  </tr>`).join(''):`<tr><td colspan="${showBadge?9:8}" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>`;
   document.getElementById('tc-ads').innerHTML=`
+    ${winnerSection}
     <div class="tcard" style="margin-bottom:20px">
       <div class="thead-row"><div class="ttitle">🎯 Publicités — Semaine (avec scoring IA)</div><div style="font-size:11px;color:#4b5563">CPL moy: €${f2(opt.avgCPL)} — ${adsW.filter(a=>a.badge==='TOP').length} TOP / ${adsW.filter(a=>a.badge==='PAUSE').length} à couper</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Score</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th></tr></thead><tbody>${rows(adsW,true)}</tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Score</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th><th>Hook Rate</th></tr></thead><tbody>${rows(adsW,true)}</tbody></table></div>
     </div>
     <div class="tcard">
       <div class="thead-row"><div class="ttitle">📅 Publicités — Aujourd'hui</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th></tr></thead><tbody>${rows(D.ads.today,false)}</tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th><th>Hook Rate</th></tr></thead><tbody>${rows(D.ads.today,false)}</tbody></table></div>
     </div>`;
 }
 

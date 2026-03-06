@@ -969,10 +969,25 @@ function renderAnalytics(trend,heat,period){
   const maxLeads=Math.max(...heat.map(h=>h.leads),1);
   const maxSpend=Math.max(...heat.map(h=>h.spend),1);
 
-  // Creative ranking — all ads/adsets sorted by score, no spend filter
+  // Creative ranking — use optimization data first, fallback to D.ads direct
   const _optData = D?.optimization || {};
-  const adsRank = (_optData.adActions||[]).slice(0,10);
   const setsRank = (_optData.adSetActions||[]).slice(0,10);
+  let adsRank = (_optData.adActions||[]).slice(0,10);
+  if(adsRank.length===0){
+    const rawAds=(D?.ads?.week?.length?D.ads.week:D?.ads?.today)||[];
+    const _tCPL=CFG?.targetCPL||8,_maxCPL=CFG?.maxAcceptableCPL||20;
+    const _wc=rawAds.filter(a=>a.cpl!=null&&a.cpl>0);
+    const _avg=_wc.length?_wc.reduce((s,a)=>s+a.cpl,0)/_wc.length:_tCPL;
+    adsRank=rawAds.map(a=>{
+      let badge='NORMAL',color='#94a3b8',score=30;
+      if(a.leads===0&&a.spend>12){badge='PAUSE';color='#ef4444';score=0;}
+      else if(a.cpl&&a.cpl>_maxCPL){badge='PAUSE';color='#ef4444';score=5;}
+      else if(a.cpl&&a.cpl<=_tCPL){badge='TOP';color='#10b981';score=100;}
+      else if(a.cpl&&a.cpl<_avg*0.85){badge='BOOST';color='#8b5cf6';score=80;}
+      else if(a.cpl&&a.cpl<=_tCPL*1.4){badge='OK';color='#f59e0b';score=55;}
+      return {...a,badge,color,score};
+    }).sort((a,b)=>b.score-a.score).slice(0,10);
+  }
 
   el.innerHTML=`
   <div style="padding:8px 0 20px">

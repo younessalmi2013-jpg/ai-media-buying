@@ -204,6 +204,29 @@
     ::-webkit-scrollbar{width:5px;height:5px}
     ::-webkit-scrollbar-track{background:#080b14}
     ::-webkit-scrollbar-thumb{background:#1f2d47;border-radius:3px}
+
+    /* DATE FILTER */
+    .dfbtn{padding:5px 10px;border-radius:6px;border:none;background:transparent;color:#4b5563;font-size:11px;cursor:pointer;transition:.15s;white-space:nowrap}
+    .dfbtn.active{background:#6366f1;color:#fff}
+    .dfbtn:hover:not(.active){background:#1f2d47;color:#94a3b8}
+
+    /* IG COMMENTS */
+    .cm-row{background:#080b14;border-radius:8px;padding:10px 14px;margin-bottom:6px}
+    .cm-user{font-size:11px;color:#6366f1;font-weight:600;margin-bottom:2px}
+    .cm-text{font-size:12px;color:#94a3b8;line-height:1.5}
+    .cm-date{font-size:10px;color:#374151;margin-top:3px}
+
+    /* PRINT */
+    @media print{
+      .hdr-r .dfbtn,.hdr-r .rbtn,#datepicker,.tabs .tab,.bbtns,.sact,.toast{display:none!important}
+      .wrap{padding:0;max-width:100%}
+      .tc{display:block!important}
+      .kcard,.gcard,.tcard,.ccrd,.recs,.scard{break-inside:avoid;page-break-inside:avoid}
+      body{background:#fff;color:#000}
+      .kcard,.gcard,.tcard,.ccrd,.ai-score-card,.ai-decision-box,.ai-budget-calc,.bcard{background:#f9fafb;border:1px solid #e5e7eb;color:#111}
+      .kval,.gnum,.score-num,.cdval,.ai-decision-main{color:#111!important}
+      .klbl,.ksub,.gsub,.gpct,.ctitle,.section-title,.ai-bc-lbl,.ai-bc-sub,.flbl,.retitle{color:#555!important}
+    }
   </style>
 </head>
 <body>
@@ -221,9 +244,24 @@
       <div id="scoreNum" class="score-num score-ok">—</div>
       <div class="score-lbl">Score<br>IA</div>
     </div>
+    <!-- Date filter -->
+    <div style="display:flex;gap:3px;background:#111827;border:1px solid #1f2d47;border-radius:8px;padding:3px">
+      <button class="dfbtn active" id="df-today" onclick="setDateFilter('today')">Auj.</button>
+      <button class="dfbtn" id="df-yesterday" onclick="setDateFilter('yesterday')">Hier</button>
+      <button class="dfbtn" id="df-last_7d" onclick="setDateFilter('last_7d')">7j</button>
+      <button class="dfbtn" id="df-last_30d" onclick="setDateFilter('last_30d')">30j</button>
+      <button class="dfbtn" id="df-custom" onclick="toggleDatePicker()" title="Plage personnalisée">📅</button>
+    </div>
+    <div id="datepicker" style="display:none;position:absolute;top:56px;right:200px;background:#0d1122;border:1px solid #1f2d47;border-radius:10px;padding:10px 12px;z-index:200;display:none;flex-wrap:wrap;gap:6px;align-items:center;box-shadow:0 8px 24px #000a">
+      <input type="date" id="dp-since" style="background:#111827;border:1px solid #1f2d47;color:#e2e8f0;padding:5px 8px;border-radius:6px;font-size:11px">
+      <span style="color:#4b5563;font-size:11px">→</span>
+      <input type="date" id="dp-until" style="background:#111827;border:1px solid #1f2d47;color:#e2e8f0;padding:5px 8px;border-radius:6px;font-size:11px">
+      <button onclick="applyDateRange()" style="background:#6366f1;border:none;color:#fff;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600">OK</button>
+    </div>
     <div class="dot" id="dot"></div>
     <div class="ts" id="ts">Chargement...</div>
     <button class="rbtn" onclick="load()">🔄</button>
+    <button class="rbtn" onclick="window.print()" title="Exporter en PDF">📄 PDF</button>
   </div>
 </div>
 
@@ -260,6 +298,33 @@
 <script>
 let D = null, CFG = null;
 let charts = {};
+let currentPreset = 'today';
+let customSince = '', customUntil = '';
+
+function setDateFilter(preset) {
+  currentPreset = preset;
+  ['today','yesterday','last_7d','last_30d','custom'].forEach(p => {
+    const btn = document.getElementById('df-'+p);
+    if(btn) btn.classList.toggle('active', p === preset);
+  });
+  if(preset !== 'custom') { const dp=document.getElementById('datepicker'); if(dp) dp.style.display='none'; }
+  load();
+}
+
+function toggleDatePicker() {
+  const dp = document.getElementById('datepicker');
+  if(!dp) return;
+  dp.style.display = dp.style.display === 'flex' ? 'none' : 'flex';
+}
+
+function applyDateRange() {
+  const since = document.getElementById('dp-since')?.value;
+  const until = document.getElementById('dp-until')?.value;
+  if (!since || !until) { toast('Sélectionne les deux dates', true); return; }
+  customSince = since; customUntil = until;
+  const dp = document.getElementById('datepicker'); if(dp) dp.style.display='none';
+  setDateFilter('custom');
+}
 
 const f2 = n => n == null ? '—' : Number(n).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fn = n => n == null ? '—' : Number(n).toLocaleString('fr-FR');
@@ -290,7 +355,10 @@ async function load(){
   try{
     document.getElementById('dot').style.background='#f59e0b';
     document.getElementById('ts').textContent='Actualisation...';
-    const [dr,cr]=await Promise.all([fetch('/api/dashboard'),fetch('/api/config')]);
+    const dashUrl = currentPreset === 'custom' && customSince && customUntil
+      ? `/api/dashboard?since=${customSince}&until=${customUntil}`
+      : `/api/dashboard?preset=${currentPreset}`;
+    const [dr,cr]=await Promise.all([fetch(dashUrl),fetch('/api/config')]);
     D=await dr.json(); CFG=await cr.json();
     document.getElementById('dot').style.background='#10b981';
     document.getElementById('ts').textContent=`MAJ ${ago(D.lastUpdated)}`;
@@ -683,11 +751,50 @@ function renderOptimization(D){
 // ── SCRIPTS ────────────────────────────────────────────────────────────────────
 function renderScripts(D){
   window._scripts=D.scripts;
+  // Build AI script tips section from real ad data
+  const _topAds = (D?.optimization?.adActions||[]).filter(a=>a.badge==='TOP'||a.badge==='BOOST').slice(0,4);
+  const _pauseAds = (D?.optimization?.adActions||[]).filter(a=>a.badge==='PAUSE'&&a.spend>5).slice(0,3);
+  const _weekCPL = D?.ai?.kpis?.weekCPL;
+  const _tCPL = D?.ai?.config?.targetCPL||6;
+  const _cplGood = _weekCPL && _weekCPL <= _tCPL;
+  const _scriptTips = [];
+  if (_cplGood) _scriptTips.push({ icon:'🏆', txt:`<strong>CPL semaine €${_weekCPL?.toFixed(2)} — excellent</strong> ! Tes créatives actuelles convertissent bien. Duplique les TOP avec de nouvelles audiences Lookalike 3-5%.` });
+  else if (_weekCPL) _scriptTips.push({ icon:'⚠️', txt:`<strong>CPL semaine €${_weekCPL?.toFixed(2)} (cible €${_tCPL})</strong> — teste un nouveau hook. Les scripts "Preuve Sociale" et "Chiffre Choc" réduisent typiquement le CPL de 20-40%.` });
+  _scriptTips.push({ icon:'🎥', txt:`<strong>Format UGC Selfie #1 en 2025</strong> — les vidéos tournées sur téléphone sans production convertissent souvent 2-3x mieux que les créas studio sur Meta & Instagram.` });
+  _scriptTips.push({ icon:'⏱️', txt:`<strong>Hook = 3 premières secondes</strong> — 80% des viewers quittent avant 3 sec. Ton hook doit créer une tension immédiate (question, chiffre surprenant, ou contradiction).` });
+  _scriptTips.push({ icon:'🔄', txt:`<strong>Rotation créas toutes les 5-7 jours</strong> — la fatigue publicitaire sur Meta commence à J+7. Avoir 3-5 versions du même script avec des hooks différents est essentiel.` });
+
+  const scriptAnalysisSection = `
+    <div style="background:linear-gradient(135deg,#0d1a3a,#0d1122);border:1px solid #1e3a6e;border-radius:14px;padding:20px;margin-bottom:22px">
+      <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:14px">🤖 Analyse IA — Scripts & Créatives</div>
+      <div style="display:grid;grid-template-columns:${_topAds.length>0?'1fr 1fr':'1fr'};gap:14px;margin-bottom:14px">
+        ${_topAds.length>0?`<div>
+          <div style="font-size:10px;color:#10b981;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:700">✅ Créatives TOP — Clone ces hooks</div>
+          ${_topAds.map(a=>`<div style="background:#0d1a12;border:1px solid #10b98133;border-radius:8px;padding:9px 12px;margin-bottom:6px">
+            <div style="font-size:12px;color:#e2e8f0;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.name}">${a.name}</div>
+            <div style="font-size:11px;color:#10b981">${a.leads} leads · CPL €${a.cpl?Number(a.cpl).toFixed(2):'—'} · Score ${a.score}/100</div>
+          </div>`).join('')}
+        </div>`:'' }
+        ${_pauseAds.length>0?`<div>
+          <div style="font-size:10px;color:#ef4444;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:700">⛔ Créatives PAUSE — Évite ces structures</div>
+          ${_pauseAds.map(a=>`<div style="background:#1a0a0a;border:1px solid #ef444433;border-radius:8px;padding:9px 12px;margin-bottom:6px">
+            <div style="font-size:12px;color:#e2e8f0;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.name}">${a.name}</div>
+            <div style="font-size:11px;color:#ef4444">€${Number(a.spend).toFixed(2)} · ${a.leads} leads${a.cpl?` · CPL €${Number(a.cpl).toFixed(2)}`:''}</div>
+          </div>`).join('')}
+        </div>`:(_topAds.length===0?`<div><div style="font-size:12px;color:#4b5563">Lance tes campagnes pour obtenir des recommandations personnalisées basées sur tes données réelles.</div></div>`:'')}
+      </div>
+      <div style="border-top:1px solid #1e3a6e;padding-top:12px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">💡 Conseils personnalisés</div>
+        ${_scriptTips.map(t=>`<div style="background:#080b14;border-radius:8px;padding:10px 14px;font-size:12px;color:#94a3b8;line-height:1.6;display:flex;gap:10px"><span style="font-size:15px;flex-shrink:0">${t.icon}</span><span>${t.txt}</span></div>`).join('')}
+      </div>
+    </div>`;
+
   document.getElementById('tc-scripts').innerHTML=`
     <div style="margin-bottom:18px">
       <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px">✍️ Scripts Publicitaires IA</div>
       <div style="font-size:12px;color:#4b5563">10 formats inspirés YouTube Ads & Facebook Ad Library · Générés pour "${D.ai.config.offerName}"</div>
     </div>
+    ${scriptAnalysisSection}
     <div class="sgrid">${D.scripts.map(s=>`
       <div class="scard">
         <div class="stop"><div><div class="stype">${s.type}</div><div class="stitle">${s.title}</div><div style="font-size:11px;color:#6366f1;margin-top:4px">${s.platform||''}</div></div><div class="sbadge">${s.badge}</div></div>
@@ -745,8 +852,8 @@ async function loadIG(){
         </div>
         <div class="tcard">
           <div class="thead-row"><div class="ttitle">📊 Analyse par post — Taux d'engagement</div><div style="font-size:11px;color:#4b5563">TOP ≥ 3% · MOYEN 1-3% · FAIBLE &lt; 1%</div></div>
-          <div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Type</th><th>❤️ Likes</th><th>💬 Comments</th><th>📊 Engagement</th><th>Score</th><th>Lien</th></tr></thead>
-          <tbody>${postsEng.map(p=>`<tr><td>${new Date(p.timestamp).toLocaleDateString('fr-FR')}</td><td>${p.media_type}</td><td>${p.lk}</td><td>${p.cm}</td><td><strong>${p.eng}%</strong></td><td><span style="background:${p.bc}22;color:${p.bc};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">${p.badge}</span></td><td><a href="${p.permalink}" target="_blank" style="color:#6366f1">Voir →</a></td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:#4b5563;padding:20px">Aucun post</td></tr>'}</tbody>
+          <div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Type</th><th>❤️ Likes</th><th>💬 Comments</th><th>📊 Engagement</th><th>Score</th><th>Actions</th></tr></thead>
+          <tbody>${postsEng.map(p=>`<tr id="igrow-${p.id}"><td>${new Date(p.timestamp).toLocaleDateString('fr-FR')}</td><td>${p.media_type}</td><td>${p.lk}</td><td>${p.cm}</td><td><strong>${p.eng}%</strong></td><td><span style="background:${p.bc}22;color:${p.bc};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700">${p.badge}</span></td><td style="white-space:nowrap"><a href="${p.permalink}" target="_blank" style="color:#6366f1;margin-right:8px">Voir →</a>${p.cm>0?`<button onclick="loadIgComments('${p.id}',this)" style="background:#1e293b;border:1px solid #1f2d47;color:#94a3b8;padding:3px 8px;border-radius:6px;font-size:10px;cursor:pointer">💬 ${p.cm}</button>`:'<span style="color:#374151;font-size:10px">0 💬</span>'}</td></tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:#4b5563;padding:20px">Aucun post</td></tr>'}</tbody>
           </table></div>
         </div>`;
     } else {
@@ -764,6 +871,38 @@ async function loadIG(){
         </div>`;
     }
   }catch(e){ document.getElementById('tc-instagram').innerHTML=`<div style="color:#4b5563;text-align:center;padding:40px">Erreur: ${e.message}</div>`; }
+}
+
+// ── INSTAGRAM COMMENTS ────────────────────────────────────────────────────────
+async function loadIgComments(postId, btn) {
+  const existingRow = document.getElementById('igcomments-'+postId);
+  if (existingRow) { existingRow.remove(); btn.textContent = '💬 '+btn.textContent.replace(/[^0-9]/g,'').trim(); return; }
+  const origText = btn.textContent;
+  btn.textContent = '⏳';
+  try {
+    const r = await fetch('/api/instagram-comments?postId='+postId);
+    const d = await r.json();
+    const comments = d.data || [];
+    const row = document.getElementById('igrow-'+postId);
+    if (!row) return;
+    const newRow = document.createElement('tr');
+    newRow.id = 'igcomments-'+postId;
+    newRow.innerHTML = `<td colspan="7" style="padding:12px;background:#080b14;border-top:none">
+      <div style="font-size:11px;color:#6366f1;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">💬 Derniers commentaires</div>
+      ${comments.length > 0
+        ? comments.map(c=>`<div class="cm-row">
+            <div class="cm-user">@${c.username||'utilisateur'}</div>
+            <div class="cm-text">${c.text||''}</div>
+            <div class="cm-date">${c.timestamp?new Date(c.timestamp).toLocaleDateString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+          </div>`).join('')
+        : '<div style="color:#4b5563;font-size:12px;padding:8px 0">Aucun commentaire disponible (vérifiez les permissions instagram_manage_comments)</div>'}
+    </td>`;
+    row.after(newRow);
+    btn.textContent = '💬 Masquer';
+  } catch(e) {
+    btn.textContent = origText;
+    toast('Erreur commentaires: '+e.message, true);
+  }
 }
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────────

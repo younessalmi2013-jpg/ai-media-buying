@@ -52,6 +52,7 @@ function loadConfig() {
 function saveConfig(cfg) { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
 function getLeads(actions) { if (!actions) return 0; const a = actions.find(x => x.action_type === 'lead'); return a ? parseInt(a.value) : 0; }
 function getLPV(actions) { if (!actions) return 0; const a = actions.find(x => x.action_type === 'landing_page_view'); return a ? parseInt(a.value) : 0; }
+function getVideo3s(actions) { if (!actions) return 0; const a = actions.find(x => x.action_type === 'video_view' && x.action_type_version === '3'); if (a) return parseInt(a.value); const b = actions.find(x => x.action_type === 'video_3_sec_watched_actions'); return b ? parseInt(b.value) : 0; }
 function hoursUntil(d) { return Math.max(0, Math.round((new Date(d) - new Date()) / 3600000)); }
 function daysUntil(d) { return Math.max(0, (new Date(d) - new Date()) / 86400000); }
 
@@ -93,21 +94,29 @@ function buildParams(obj) {
   return Object.entries(obj).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 }
 
+// Date param helper — accepts preset string or {since,until} object
+function getDateParams(dateParam) {
+  if (!dateParam || dateParam === 'today') return { date_preset: 'today' };
+  if (typeof dateParam === 'string') return { date_preset: dateParam };
+  if (dateParam.since && dateParam.until) return { time_range: JSON.stringify({ since: dateParam.since, until: dateParam.until }) };
+  return { date_preset: 'today' };
+}
+
 // ─── META API CALLS ───────────────────────────────────────────────────────────
-async function getCampaignInsights(datePreset, campaignId) {
-  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'impressions,clicks,spend,reach,cpc,ctr,actions,frequency', date_preset: datePreset });
+async function getCampaignInsights(dateParam, campaignId) {
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'impressions,clicks,spend,reach,cpc,ctr,actions,frequency', ...getDateParams(dateParam) });
   const r = await apiGet(`/${API_VERSION}/${campaignId}/insights?${p}`);
   return r?.data?.[0] || null;
 }
 
-async function getAdSetsInsights(datePreset, campaignId, adAccountId) {
-  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'adset_id,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions,frequency', level: 'adset', date_preset: datePreset, filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
+async function getAdSetsInsights(dateParam, campaignId, adAccountId) {
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'adset_id,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions,frequency,video_3_sec_watched_actions', level: 'adset', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
   const r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p}`);
   return r?.data || [];
 }
 
-async function getAdsInsights(datePreset, campaignId, adAccountId) {
-  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'ad_id,ad_name,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions', level: 'ad', date_preset: datePreset, filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
+async function getAdsInsights(dateParam, campaignId, adAccountId) {
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'ad_id,ad_name,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions,video_3_sec_watched_actions', level: 'ad', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
   const r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p}`);
   return r?.data || [];
 }
@@ -243,10 +252,22 @@ async function getCompetitorAds(q, country) { return getMetaAds(q, country); }
 
 // ─── AI ENGINE ────────────────────────────────────────────────────────────────
 function processAdSets(arr) {
-  return arr.map(a => ({ id: a.ad_id||a.adset_id, name: a.ad_id ? (a.ad_name||a.adset_name) : (a.adset_name||a.ad_name), adsetName: a.adset_name,
-    spend: parseFloat(a.spend||0), leads: getLeads(a.actions), cpl: getLeads(a.actions)>0 ? parseFloat(a.spend)/getLeads(a.actions) : null,
-    impressions: parseInt(a.impressions||0), clicks: parseInt(a.clicks||0), ctr: parseFloat(a.ctr||0),
-    cpc: parseFloat(a.cpc||0), reach: parseInt(a.reach||0), lpv: getLPV(a.actions) }));
+  return arr.map(a => {
+    const impressions = parseInt(a.impressions||0);
+    // video_3_sec_watched_actions can come as top-level array or inside actions
+    let v3s = 0;
+    if (Array.isArray(a.video_3_sec_watched_actions) && a.video_3_sec_watched_actions.length) {
+      v3s = parseInt(a.video_3_sec_watched_actions[0]?.value||0);
+    } else {
+      v3s = getVideo3s(a.actions);
+    }
+    const hookRate = impressions > 0 && v3s > 0 ? parseFloat((v3s / impressions * 100).toFixed(2)) : null;
+    return { id: a.ad_id||a.adset_id, name: a.ad_id ? (a.ad_name||a.adset_name) : (a.adset_name||a.ad_name), adsetName: a.adset_name,
+      spend: parseFloat(a.spend||0), leads: getLeads(a.actions), cpl: getLeads(a.actions)>0 ? parseFloat(a.spend)/getLeads(a.actions) : null,
+      impressions, clicks: parseInt(a.clicks||0), ctr: parseFloat(a.ctr||0),
+      cpc: parseFloat(a.cpc||0), reach: parseInt(a.reach||0), lpv: getLPV(a.actions),
+      video3s: v3s, hookRate };
+  });
 }
 
 function buildAI(cfg, todayRaw, weekRaw, adSetsToday, campaignInfo) {
@@ -432,13 +453,27 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/dashboard' && req.method === 'GET') {
     try {
       const cfg = loadConfig();
+      // Date filter: ?preset=today|yesterday|last_7d|last_30d  or  ?since=YYYY-MM-DD&until=YYYY-MM-DD
+      const { preset, since, until } = parsed.query;
+      let primaryParam = 'today';
+      let secondaryParam = 'this_week_mon_today';
+      if (since && until) {
+        primaryParam = { since, until };
+        secondaryParam = { since, until };
+      } else if (preset === 'yesterday') {
+        primaryParam = 'yesterday'; secondaryParam = 'last_7d';
+      } else if (preset === 'last_7d') {
+        primaryParam = 'last_7d'; secondaryParam = 'last_30d';
+      } else if (preset === 'last_30d') {
+        primaryParam = 'last_30d'; secondaryParam = 'lifetime';
+      }
       const [todayRaw, weekRaw, adSetsToday, adSetsWeek, adsToday, adsWeek, campInfo] = await Promise.all([
-        getCampaignInsights('today', cfg.campaignId),
-        getCampaignInsights('this_week_mon_today', cfg.campaignId),
-        getAdSetsInsights('today', cfg.campaignId, cfg.adAccountId),
-        getAdSetsInsights('this_week_mon_today', cfg.campaignId, cfg.adAccountId),
-        getAdsInsights('today', cfg.campaignId, cfg.adAccountId),
-        getAdsInsights('this_week_mon_today', cfg.campaignId, cfg.adAccountId),
+        getCampaignInsights(primaryParam, cfg.campaignId),
+        getCampaignInsights(secondaryParam, cfg.campaignId),
+        getAdSetsInsights(primaryParam, cfg.campaignId, cfg.adAccountId),
+        getAdSetsInsights(secondaryParam, cfg.campaignId, cfg.adAccountId),
+        getAdsInsights(primaryParam, cfg.campaignId, cfg.adAccountId),
+        getAdsInsights(secondaryParam, cfg.campaignId, cfg.adAccountId),
         getCampaignInfo(cfg.campaignId)
       ]);
       const adSetsTodayProc = processAdSets(adSetsToday);
@@ -494,6 +529,16 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/api/instagram' && req.method === 'GET') {
     return json(res, await getInstagramData());
+  }
+
+  if (pathname === '/api/instagram-comments' && req.method === 'GET') {
+    try {
+      const postId = parsed.query.postId;
+      if (!postId) return json(res, { error: 'postId required' }, 400);
+      const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'id,text,timestamp,username', limit: 15 });
+      const r = await apiGet(`/${API_VERSION}/${postId}/comments?${p}`);
+      return json(res, r || { data: [] });
+    } catch(e) { return json(res, { error: e.message }, 500); }
   }
 
   if (pathname === '/api/cpl-trend' && req.method === 'GET') {

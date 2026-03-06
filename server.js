@@ -110,14 +110,26 @@ async function getCampaignInsights(dateParam, campaignId) {
 }
 
 async function getAdSetsInsights(dateParam, campaignId, adAccountId) {
-  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'adset_id,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions,frequency', level: 'adset', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
-  const r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p}`);
+  // Try with video_3_sec_watched_actions; if Meta returns an error, retry without
+  const baseFields = 'adset_id,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions,frequency';
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: baseFields+',video_3_sec_watched_actions', level: 'adset', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
+  let r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p}`);
+  if (r?.error) {
+    const p2 = buildParams({ access_token: ACCESS_TOKEN, fields: baseFields, level: 'adset', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
+    r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p2}`);
+  }
   return r?.data || [];
 }
 
 async function getAdsInsights(dateParam, campaignId, adAccountId) {
-  const p = buildParams({ access_token: ACCESS_TOKEN, fields: 'ad_id,ad_name,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions', level: 'ad', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
-  const r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p}`);
+  // Try with video_3_sec_watched_actions; if Meta returns an error, retry without
+  const baseFields = 'ad_id,ad_name,adset_name,impressions,clicks,spend,reach,cpc,ctr,actions';
+  const p = buildParams({ access_token: ACCESS_TOKEN, fields: baseFields+',video_3_sec_watched_actions', level: 'ad', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
+  let r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p}`);
+  if (r?.error) {
+    const p2 = buildParams({ access_token: ACCESS_TOKEN, fields: baseFields, level: 'ad', ...getDateParams(dateParam), filtering: JSON.stringify([{field:'campaign.id',operator:'EQUAL',value:campaignId}]) });
+    r = await apiGet(`/${API_VERSION}/${adAccountId}/insights?${p2}`);
+  }
   return r?.data || [];
 }
 

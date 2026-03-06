@@ -162,13 +162,82 @@ async function getHourlyHeatmap() {
   return hours;
 }
 
-// ─── COMPETITOR ADS (Ad Library) ─────────────────────────────────────────────
-async function getCompetitorAds(q, country) {
+// ─── COMPETITOR ADS — ALL PLATFORMS ──────────────────────────────────────────
+async function getMetaAds(q, country) {
   const cc = (country||'FR').toUpperCase();
-  const p = buildParams({ access_token: ACCESS_TOKEN, search_terms: q, ad_type: 'ALL', ad_reached_countries: JSON.stringify([cc]), fields: 'id,ad_creative_bodies,ad_creative_link_titles,ad_creative_link_captions,page_name,ad_delivery_start_time,ad_snapshot_url', limit: 12 });
-  const r = await apiGet(`/${API_VERSION}/ads_archive?${p}`);
-  return { ads: r?.data||[], q, country: cc };
+  try {
+    const p = buildParams({ access_token: ACCESS_TOKEN, search_terms: q, ad_type: 'ALL', ad_reached_countries: JSON.stringify([cc]), fields: 'id,ad_creative_bodies,ad_creative_link_titles,ad_creative_link_captions,page_name,ad_delivery_start_time,ad_snapshot_url', limit: 20 });
+    const r = await apiGet(`/${API_VERSION}/ads_archive?${p}`);
+    const ads = (r?.data||[]).map(ad => ({
+      id: ad.id, page: ad.page_name||'Page inconnue',
+      title: (ad.ad_creative_link_titles||[])[0]||'',
+      body: (ad.ad_creative_bodies||[])[0]||'',
+      caption: (ad.ad_creative_link_captions||[])[0]||'',
+      date: ad.ad_delivery_start_time||'', url: ad.ad_snapshot_url||''
+    }));
+    return { platform:'meta', ads, q, country:cc, error:null };
+  } catch(e) {
+    return { platform:'meta', ads:[], q, country:cc, error:e.message,
+      fallback:`https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${cc}&q=${encodeURIComponent(q)}&search_type=keyword_unordered` };
+  }
 }
+
+async function getTikTokAds(q, country) {
+  const cc = (country||'FR').toUpperCase();
+  try {
+    const url = `https://ads.tiktok.com/creative_radar_api/v1/top_ads/v2/list?period=7&limit=12&order_by=vr&keyword=${encodeURIComponent(q)}&country_code=${cc.toLowerCase()}`;
+    const resp = await fetch(url, { headers:{'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36','Accept':'application/json','Referer':'https://ads.tiktok.com/'}, signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('TikTok API '+resp.status);
+    const data = await resp.json();
+    const ads = (data?.data?.list||[]).map(ad => ({
+      id: ad.item_id||ad.video_id, page: ad.brand_name||ad.advertiser_name||'Annonceur',
+      title: ad.ad_title||ad.video_info?.desc||'', body: ad.video_info?.desc||ad.ad_title||'',
+      thumb: ad.video_info?.cover||'', url: `https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?keyword=${encodeURIComponent(q)}`
+    }));
+    return { platform:'tiktok', ads, q, country:cc, error:null };
+  } catch(e) {
+    return { platform:'tiktok', ads:[], q, country:cc, error:e.message,
+      fallback:`https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?keyword=${encodeURIComponent(q)}` };
+  }
+}
+
+async function getGoogleAds(q, country) {
+  const cc = (country||'FR').toUpperCase();
+  return { platform:'google', ads:[], q, country:cc, error:null,
+    fallback:`https://adstransparency.google.com/?region=${cc.toLowerCase()}&query=${encodeURIComponent(q)}`,
+    note:'Google Ads Transparency Center — recherche publique' };
+}
+
+async function getYouTubeAds(q, country) {
+  const cc = (country||'FR').toUpperCase();
+  return { platform:'youtube', ads:[], q, country:cc, error:null,
+    fallback:`https://adstransparency.google.com/?region=${cc.toLowerCase()}&query=${encodeURIComponent(q)}&format=VIDEO`,
+    note:'YouTube Ads via Google Transparency Center' };
+}
+
+async function getSnapchatAds(q, country) {
+  const cc = (country||'FR').toUpperCase();
+  return { platform:'snapchat', ads:[], q, country:cc, error:null,
+    fallback:`https://library.snap.com/search?query=${encodeURIComponent(q)}`,
+    note:'Snap Ad Library — bibliothèque publique' };
+}
+
+async function getAllPlatformAds(q, country) {
+  const [meta, tiktok, google, youtube, snapchat] = await Promise.allSettled([
+    getMetaAds(q, country), getTikTokAds(q, country),
+    getGoogleAds(q, country), getYouTubeAds(q, country), getSnapchatAds(q, country)
+  ]);
+  return {
+    meta: meta.status==='fulfilled'?meta.value:{platform:'meta',ads:[],error:meta.reason?.message},
+    tiktok: tiktok.status==='fulfilled'?tiktok.value:{platform:'tiktok',ads:[],error:tiktok.reason?.message},
+    google: google.status==='fulfilled'?google.value:{platform:'google',ads:[],error:google.reason?.message},
+    youtube: youtube.status==='fulfilled'?youtube.value:{platform:'youtube',ads:[],error:youtube.reason?.message},
+    snapchat: snapchat.status==='fulfilled'?snapchat.value:{platform:'snapchat',ads:[],error:snapchat.reason?.message}
+  };
+}
+
+// compat alias
+async function getCompetitorAds(q, country) { return getMetaAds(q, country); }
 
 // ─── AI ENGINE ────────────────────────────────────────────────────────────────
 function processAdSets(arr) {
@@ -439,7 +508,15 @@ const server = http.createServer(async (req, res) => {
     try {
       const kw = parsed.query.q||'';
       if (!kw) return json(res, { ads:[], q:'', country:'FR' });
-      return json(res, await getCompetitorAds(kw, parsed.query.country||'FR'));
+      return json(res, await getMetaAds(kw, parsed.query.country||'FR'));
+    } catch(e) { return json(res, { error: e.message }, 500); }
+  }
+
+  if (pathname === '/api/competitor-ads-all' && req.method === 'GET') {
+    try {
+      const kw = parsed.query.q||'';
+      if (!kw) return json(res, { meta:{ads:[]},tiktok:{ads:[]},google:{ads:[]},youtube:{ads:[]},snapchat:{ads:[]} });
+      return json(res, await getAllPlatformAds(kw, parsed.query.country||'FR'));
     } catch(e) { return json(res, { error: e.message }, 500); }
   }
 

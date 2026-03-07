@@ -637,16 +637,19 @@ function hookRateColor(hr){ return hr==null?'#4b5563':hr>=20?'#10b981':hr>=10?'#
 function renderAds(D){
   const opt=D.optimization||{};
   const adsW=opt.adActions||[];
+  // Populate preview data cache
+  window._adsPreviewData = window._adsPreviewData || {};
+  [...adsW, ...(D.ads?.today||[]), ...(D.ads?.week||[])].forEach(a=>{ if(a.id) window._adsPreviewData[a.id]=a; });
   // Winning ads = TOP badge with leads > 0, sorted by CPL
   const winners=adsW.filter(a=>(a.badge==='TOP'||a.badge==='BOOST')&&a.leads>0&&a.cpl).sort((a,b)=>a.cpl-b.cpl).slice(0,3);
   const winnerSection=winners.length?`
     <div style="background:linear-gradient(135deg,#0a1f12,#0d1a0d);border:1px solid #10b98130;border-radius:14px;padding:20px;margin-bottom:20px">
       <div style="font-size:15px;font-weight:700;color:#10b981;margin-bottom:14px">🏆 Ads Gagnantes — Top ${winners.length} créatives</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
-        ${winners.map((a,i)=>`<div style="background:#080b14;border:1px solid ${a.color}33;border-radius:12px;padding:16px;position:relative">
+        ${winners.map((a,i)=>`<div style="background:#080b14;border:1px solid ${a.color}33;border-radius:12px;padding:16px;position:relative;cursor:${a.id?'pointer':'default'}" ${a.id?`onclick="showAdPreviewById('${a.id}')" title="👁 Voir la créative"`:''}">
           <div style="position:absolute;top:10px;right:10px;font-size:18px">${i===0?'🥇':i===1?'🥈':'🥉'}</div>
           <div style="font-size:11px;color:#4b5563;margin-bottom:4px">#${i+1} — ${adBadgeHtml(a.badge,a.color)}</div>
-          <div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.name}">${a.name}</div>
+          <div style="font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.name}">${a.id?`<span style="color:#60a5fa">👁 </span>`:''}${a.name}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
             <div style="background:#0d1122;border-radius:8px;padding:8px;text-align:center">
               <div style="font-size:18px;font-weight:700;color:#10b981">€${f2(a.cpl)}</div>
@@ -673,23 +676,24 @@ function renderAds(D){
       </div>
     </div>`:'';
   const rows=(arr,showBadge)=>arr.length?arr.map(a=>`<tr>
-    <td class="tname" title="${a.name}">${a.name.substring(0,24)}…</td>
+    <td class="tname" title="${a.name}">${a.id?`<span onclick="showAdPreviewById('${a.id}')" style="cursor:pointer;color:#60a5fa;text-decoration:underline;text-underline-offset:2px" title="👁 Voir preview">${a.name.substring(0,22)}…</span>`:a.name.substring(0,24)+'…'}</td>
     <td class="tname" style="font-size:10px;color:#4b5563">${(a.adsetName||'—').substring(0,20)}…</td>
     ${showBadge?`<td>${adBadgeHtml(a.badge||'—',a.color||'#64748b')}</td>`:''}
     <td>€${f2(a.spend)}</td><td>${fn(a.leads)}</td>
     <td class="${cplCls(a.cpl)}">€${f2(a.cpl)}</td>
     <td>${f2(a.ctr)}%</td><td>€${f2(a.cpc)}</td>
     <td style="color:${hookRateColor(a.hookRate)};font-weight:600">${a.hookRate!=null?a.hookRate+'%':'—'}</td>
-  </tr>`).join(''):`<tr><td colspan="${showBadge?9:8}" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>`;
+    <td>${a.id?`<button onclick="showAdPreviewById('${a.id}')" style="background:#1e293b;border:1px solid #2d4a6e;color:#60a5fa;padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap" title="Voir la créative">👁 Preview</button>`:'—'}</td>
+  </tr>`).join(''):`<tr><td colspan="${showBadge?10:9}" style="text-align:center;color:#4b5563;padding:30px">Aucune pub active</td></tr>`;
   document.getElementById('tc-ads').innerHTML=`
     ${winnerSection}
     <div class="tcard" style="margin-bottom:20px">
       <div class="thead-row"><div class="ttitle">🎯 Publicités — Semaine (avec scoring IA)</div><div style="font-size:11px;color:#4b5563">CPL moy: €${f2(opt.avgCPL)} — ${adsW.filter(a=>a.badge==='TOP').length} TOP / ${adsW.filter(a=>a.badge==='PAUSE').length} à couper</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Score</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th><th>Hook Rate</th></tr></thead><tbody>${rows(adsW,true)}</tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Score</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th><th>Hook Rate</th><th>👁</th></tr></thead><tbody>${rows(adsW,true)}</tbody></table></div>
     </div>
     <div class="tcard">
       <div class="thead-row"><div class="ttitle">📅 Publicités — Aujourd'hui</div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th><th>Hook Rate</th></tr></thead><tbody>${rows(D.ads.today,false)}</tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pub</th><th>Ad Set</th><th>Dépense</th><th>Leads</th><th>CPL</th><th>CTR</th><th>CPC</th><th>Hook Rate</th><th>👁</th></tr></thead><tbody>${rows(D.ads.today,false)}</tbody></table></div>
     </div>`;
 }
 
